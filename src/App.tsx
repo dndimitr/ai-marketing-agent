@@ -32,6 +32,18 @@ const CATEGORY_ICONS: Record<string, any> = {
   'General': BookOpen
 };
 
+const CATEGORY_LABELS: Record<string, string> = {
+  'Conversion Optimization': 'Оптимизация на конверсии',
+  'Content & Copy': 'Съдържание и копирайтинг',
+  'SEO & Discovery': 'SEO и откриваемост',
+  'Paid & Distribution': 'Платени кампании и дистрибуция',
+  'Measurement & Testing': 'Измерване и тестване',
+  'Retention': 'Ретеншън',
+  'Strategy & Monetization': 'Стратегия и монетизация',
+  'Sales & RevOps': 'Продажби и RevOps',
+  'General': 'Общи умения'
+};
+
 export default function App() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
@@ -113,6 +125,31 @@ export default function App() {
     try {
       const content = await fetchSkillContent(skill.path);
       setSkillContent(content);
+
+      // Превод на съдържанието на умението на български
+      try {
+        const translationPrompt = `
+Преведи на български следния Markdown текст, като запазиш структурата, форматирането и всички списъци.
+Не добавяй свои обяснения, върни само преведения Markdown.
+
+${content.markdown}
+`.trim();
+
+        const translated = await chatWithAI(
+          provider,
+          content.markdown,
+          [],
+          translationPrompt
+        );
+
+        setSkillContent({
+          name: content.name,
+          markdown: translated || content.markdown,
+        });
+      } catch (translationError) {
+        console.error('Error translating skill content:', translationError);
+      }
+
       await trackSkillView(skill.name, skill.path);
     } catch (error) {
       console.error('Error fetching skill content:', error);
@@ -226,7 +263,9 @@ export default function App() {
                   const Icon = CATEGORY_ICONS[category] || BookOpen;
                   return <Icon className="w-3 h-3" />;
                 })()}
-                <span className="text-[10px] uppercase tracking-widest font-semibold">{category}</span>
+                <span className="text-[10px] uppercase tracking-widest font-semibold">
+                  {CATEGORY_LABELS[category] || category}
+                </span>
               </div>
               <div className="space-y-1">
                 {filteredSkills.filter(s => (s.category || 'General') === category).map(skill => (
@@ -268,7 +307,11 @@ export default function App() {
                 {view === 'dashboard' ? 'Табло на маркетинг агента' : selectedSkill?.name}
               </h2>
               <p className="text-[10px] uppercase tracking-widest opacity-50">
-                {view === 'dashboard' ? 'Преглед на сесията и бързи действия' : selectedSkill?.category}
+                {view === 'dashboard'
+                  ? 'Преглед на сесията и бързи действия'
+                  : (selectedSkill?.category
+                      ? CATEGORY_LABELS[selectedSkill.category] || selectedSkill.category
+                      : '')}
               </p>
             </div>
           </div>
