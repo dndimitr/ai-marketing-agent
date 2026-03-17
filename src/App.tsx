@@ -165,7 +165,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Error in chat:', error);
-      const errorMessage = 'Sorry, I encountered an error. Please try again.';
+      const errorMessage = 'Извинявай, възникна грешка. Опитай отново.';
       setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
 
       if (session) {
@@ -187,7 +187,7 @@ export default function App() {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-8 h-8 animate-spin" />
-        <p className="font-display italic text-xl">Loading expert skills...</p>
+        <p className="font-display italic text-xl">Зареждане на експертни умения...</p>
       </div>
     );
   }
@@ -201,7 +201,7 @@ export default function App() {
       )}>
         <div className="p-6 border-b border-bg/10">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="font-display italic text-2xl">Marketing Agent</h1>
+            <h1 className="font-display italic text-2xl">Маркетинг агент</h1>
             <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
               <X className="w-5 h-5" />
             </button>
@@ -210,7 +210,7 @@ export default function App() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50" />
             <input 
               type="text" 
-              placeholder="Search skills..."
+              placeholder="Търси умения..."
               className="w-full bg-bg/5 border border-bg/10 rounded-lg py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-bg/30"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -265,10 +265,10 @@ export default function App() {
             )}
             <div>
               <h2 className="font-display italic text-xl">
-                {view === 'dashboard' ? 'Marketing Agent Dashboard' : selectedSkill?.name}
+                {view === 'dashboard' ? 'Табло на маркетинг агента' : selectedSkill?.name}
               </h2>
               <p className="text-[10px] uppercase tracking-widest opacity-50">
-                {view === 'dashboard' ? 'Session overview & quick actions' : selectedSkill?.category}
+                {view === 'dashboard' ? 'Преглед на сесията и бързи действия' : selectedSkill?.category}
               </p>
             </div>
           </div>
@@ -307,7 +307,7 @@ export default function App() {
                 )}
               >
                 <Activity className="w-3.5 h-3.5" />
-                Dashboard
+                Табло
               </button>
               <button 
                 onClick={() => setView('guide')}
@@ -317,7 +317,7 @@ export default function App() {
                 )}
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                Expert Guide
+                Експертно ръководство
               </button>
               <button 
                 onClick={() => setView('chat')}
@@ -327,7 +327,7 @@ export default function App() {
                 )}
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                AI Assistant
+                AI асистент
               </button>
             </div>
           </div>
@@ -337,18 +337,18 @@ export default function App() {
         {showSettings && (
           <div className="border-b border-ink/10 bg-bg/80 backdrop-blur-sm px-6 py-3 flex flex-col gap-2 text-xs">
             <div className="flex items-center justify-between">
-              <span className="uppercase tracking-widest opacity-60">AI Configuration</span>
+              <span className="uppercase tracking-widest opacity-60">AI настройки</span>
               <button
                 onClick={() => setShowSettings(false)}
                 className="text-[11px] opacity-60 hover:opacity-100"
               >
-                Close
+                Затвори
               </button>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
               <div className="flex flex-col gap-1 flex-1">
                 <label className="opacity-60">
-                  Provider
+                  Доставчик
                 </label>
                 <select
                   className="bg-white border border-ink/10 rounded-md px-2 py-1 text-xs"
@@ -378,35 +378,35 @@ export default function App() {
           {loadingContent ? (
             <div className="h-full flex flex-col items-center justify-center gap-4 opacity-50">
               <Loader2 className="w-6 h-6 animate-spin" />
-              <p className="text-sm italic">Loading skill guidelines...</p>
+              <p className="text-sm italic">Зареждане на ръководството за умението...</p>
             </div>
           ) : view === 'dashboard' ? (
             <div className="max-w-5xl mx-auto p-10 space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
                   <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
-                    <span>Active skill</span>
+                    <span>Активно умение</span>
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <p className="font-display italic text-lg">
-                    {selectedSkill?.name || 'Select a skill from the left'}
+                    {selectedSkill?.name || 'Избери умение отляво'}
                   </p>
                   <p className="text-[11px] opacity-60">
-                    {selectedSkill?.category || 'No category'}
+                    {selectedSkill?.category || 'Без категория'}
                   </p>
                 </div>
 
                 <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
                   <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
-                    <span>Session stats</span>
+                    <span>Статистика за сесията</span>
                     <BarChart3 className="w-4 h-4" />
                   </div>
                   <p className="text-2xl font-semibold">{totalQuestions}</p>
-                  <p className="text-[11px] opacity-60">Questions asked this session</p>
+                  <p className="text-[11px] opacity-60">Въпроси в тази сесия</p>
                   <div className="flex items-center gap-1 text-[11px] opacity-60 mt-1">
                     <Clock className="w-3 h-3" />
                     <span>
-                      Started{' '}
+                      Начало{' '}
                       {sessionStartedAt.toLocaleTimeString(undefined, {
                         hour: '2-digit',
                         minute: '2-digit'
@@ -417,11 +417,11 @@ export default function App() {
 
                 <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
                   <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
-                    <span>Latest question</span>
+                    <span>Последен въпрос</span>
                     <MessageSquare className="w-4 h-4" />
                   </div>
                   <p className="text-sm line-clamp-3">
-                    {lastUserQuestion || 'Your latest question will appear here.'}
+                    {lastUserQuestion || 'Последният ти въпрос ще се появи тук.'}
                   </p>
                 </div>
               </div>
@@ -430,7 +430,7 @@ export default function App() {
                 <div className="lg:col-span-2 bg-white border border-ink/10 rounded-2xl p-6 shadow-sm space-y-4">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-xs uppercase tracking-widest opacity-60">
-                      Quick start playbooks
+                      Бързи плейбукове
                     </h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
@@ -448,10 +448,10 @@ export default function App() {
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <Target className="w-4 h-4" />
-                        <span className="font-medium">3-step improvement plan</span>
+                        <span className="font-medium">3-стъпков план за подобрение</span>
                       </div>
                       <p className="text-[12px] opacity-70">
-                        Get a prioritized, short roadmap based on the current skill.
+                        Получи приоритизиран, кратък план според избраното умение.
                       </p>
                     </button>
 
@@ -469,10 +469,10 @@ export default function App() {
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <TrendingUp className="w-4 h-4" />
-                        <span className="font-medium">Experiment ideas</span>
+                        <span className="font-medium">Идеи за експерименти</span>
                       </div>
                       <p className="text-[12px] opacity-70">
-                        Generate test ideas with clear hypotheses and KPIs.
+                        Генерирай тестови идеи с ясни хипотези и KPI.
                       </p>
                     </button>
 
@@ -490,10 +490,10 @@ export default function App() {
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <PenTool className="w-4 h-4" />
-                        <span className="font-medium">10-min checklist</span>
+                        <span className="font-medium">10-минутен чеклист</span>
                       </div>
                       <p className="text-[12px] opacity-70">
-                        A concise checklist tailored to this skill.
+                        Стегнат чеклист, съобразен с това умение.
                       </p>
                     </button>
 
@@ -511,10 +511,10 @@ export default function App() {
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <Users className="w-4 h-4" />
-                        <span className="font-medium">Guided discovery</span>
+                        <span className="font-medium">Насочено откриване</span>
                       </div>
                       <p className="text-[12px] opacity-70">
-                        Let the agent interview you before prescribing work.
+                        Нека агентът първо те „интервюира“, преди да препоръча работа.
                       </p>
                     </button>
                   </div>
@@ -522,13 +522,13 @@ export default function App() {
 
                 <div className="bg-white border border-ink/10 rounded-2xl p-6 shadow-sm space-y-3">
                   <h3 className="text-xs uppercase tracking-widest opacity-60">
-                    How to get the best answers
+                    Как да получиш най-добри отговори
                   </h3>
                   <ul className="text-[12px] space-y-2 opacity-80 list-disc list-inside">
-                    <li>Mention your product, audience, and main goal in 1–2 sentences.</li>
-                    <li>Paste URLs when possible so the agent can analyze the page.</li>
-                    <li>Ask for concrete formats: &quot;3 headlines&quot;, &quot;email outline&quot;, &quot;AB test plan&quot;.</li>
-                    <li>Iterate: refine based on what you like or don&apos;t like.</li>
+                    <li>Опиши продукта, аудиторията и основната цел в 1–2 изречения.</li>
+                    <li>Поставяй URL-и, когато е възможно, за да може агентът да анализира страницата.</li>
+                    <li>Искай конкретни формати: „3 заглавия“, „структура на имейл“, „план за A/B тест“.</li>
+                    <li>Итерарай: уточнявай според това какво ти харесва и какво не.</li>
                   </ul>
                 </div>
               </div>
@@ -548,9 +548,9 @@ export default function App() {
                       <MessageSquare className="w-8 h-8" />
                     </div>
                     <div>
-                      <h3 className="font-display italic text-2xl">Start a consultation</h3>
+                      <h3 className="font-display italic text-2xl">Започни консултация</h3>
                       <p className="text-sm max-w-xs mx-auto">
-                        Ask me anything about {selectedSkill?.name.toLowerCase()}. I'll use the expert guidelines to help you.
+                        Попитай ме за всичко, свързано с {selectedSkill?.name.toLowerCase()}. Ще използвам експертните насоки, за да ти помогна.
                       </p>
                     </div>
                   </div>
@@ -587,13 +587,13 @@ export default function App() {
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-semibold opacity-40">
                     <Globe className="w-3 h-3" />
-                    <span>Website analysis enabled</span>
+                    <span>Анализ на уебсайт е активиран</span>
                   </div>
                 </div>
                 <div className="relative flex items-center gap-2">
                   <input
                     type="text"
-                    placeholder={`Paste a URL or ask about ${selectedSkill?.name.toLowerCase()}...`}
+                    placeholder={`Постави URL или попитай за ${selectedSkill?.name.toLowerCase()}...`}
                     className="flex-1 bg-white border border-ink/10 rounded-xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:border-ink/30 shadow-sm"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -608,7 +608,7 @@ export default function App() {
                   </button>
                 </div>
                 <p className="text-[10px] text-center mt-3 opacity-30 uppercase tracking-widest">
-                  Powered by Gemini 3.1 Pro & Expert Marketing Skills
+                  Задвижвано от Gemini 3.1 Pro и експертни маркетинг умения
                 </p>
               </div>
             </div>
