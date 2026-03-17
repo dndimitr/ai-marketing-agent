@@ -49,7 +49,6 @@ export default function App() {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [lastUserQuestion, setLastUserQuestion] = useState<string | null>(null);
   const [provider, setProvider] = useState<AIProvider>('gemini');
-  const [apiKey, setApiKey] = useState('');
   const [showSettings, setShowSettings] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -87,12 +86,6 @@ export default function App() {
 
         setProvider(initialProvider);
 
-        const storedKeyForProvider =
-          window.localStorage.getItem(`ai-api-key-${initialProvider}`) ||
-          window.localStorage.getItem('ai-api-key') ||
-          '';
-        setApiKey(storedKeyForProvider);
-
         if (!prefs?.ai_provider || prefs.ai_provider !== initialProvider) {
           await updateUserPreferences({ ai_provider: initialProvider });
         }
@@ -101,11 +94,6 @@ export default function App() {
         const fallbackProvider =
           (window.localStorage.getItem('ai-provider') as AIProvider | null) || 'gemini';
         setProvider(fallbackProvider);
-        const storedKey =
-          window.localStorage.getItem(`ai-api-key-${fallbackProvider}`) ||
-          window.localStorage.getItem('ai-api-key') ||
-          '';
-        setApiKey(storedKey);
       }
     }
 
@@ -167,7 +155,12 @@ export default function App() {
         provider,
         skillContent.markdown,
         updatedHistory,
+<<<<<<< HEAD
         input
+=======
+        input,
+        provider
+>>>>>>> 6ac6f49 (3)
       );
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
@@ -294,11 +287,6 @@ export default function App() {
                   const next = e.target.value as AIProvider;
                   setProvider(next);
                   window.localStorage.setItem('ai-provider', next);
-                  const nextKey =
-                    window.localStorage.getItem(`ai-api-key-${next}`) ||
-                    window.localStorage.getItem('ai-api-key') ||
-                    '';
-                  setApiKey(nextKey);
                   updateUserPreferences({ ai_provider: next }).catch(console.error);
                 }}
               >
@@ -374,11 +362,6 @@ export default function App() {
                     const next = e.target.value as AIProvider;
                     setProvider(next);
                     window.localStorage.setItem('ai-provider', next);
-                    const nextKey =
-                      window.localStorage.getItem(`ai-api-key-${next}`) ||
-                      window.localStorage.getItem('ai-api-key') ||
-                      '';
-                    setApiKey(nextKey);
                     updateUserPreferences({ ai_provider: next }).catch(console.error);
                   }}
                 >
@@ -387,25 +370,9 @@ export default function App() {
                   <option value="claude">Claude (Anthropic)</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-1 flex-[2] w-full">
-                <label className="opacity-60">
-                  {provider === 'gemini'
-                    ? 'Gemini API Key'
-                    : provider === 'openai'
-                      ? 'OpenAI API Key'
-                      : 'Claude API Key'}
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    const storageKey = `ai-api-key-${provider}`;
-                    window.localStorage.setItem(storageKey, e.target.value);
-                  }}
-                  placeholder="Paste your API key (stored locally in this browser)"
-                  className="bg-white border border-ink/10 rounded-md px-3 py-1.5 text-xs w-full"
-                />
+              <div className="flex flex-col gap-1 flex-[2] w-full text-[11px] opacity-70">
+                <p>API ключовете се съхраняват централно в Supabase и не се виждат във фронтенда.</p>
+                <p>За промяна на ключове или модели се свържи с администратор.</p>
               </div>
             </div>
           </div>
