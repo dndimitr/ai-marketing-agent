@@ -13,30 +13,32 @@ export async function chatWithAI(
     throw new Error('Missing Supabase URL');
   }
 
-  const functionUrl = `${supabaseUrl}/functions/v1/ai-chat`;
+  const functionUrl = `${supabaseUrl}/functions/v1/call_ai`;
 
   const { data: { session } } = await supabase.auth.getSession();
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!anonKey) throw new Error('Missing Supabase anon key');
 
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session?.access_token || anonKey}`,
+      apikey: anonKey,
+      Authorization: `Bearer ${session?.access_token || anonKey}`,
     },
     body: JSON.stringify({
       provider,
-      skillContent,
-      messages,
-      userMessage,
+      skillMarkdown: skillContent,
+      history: messages,
+      message: userMessage,
     }),
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to get AI response');
+    const errorText = await response.text();
+    throw new Error(errorText || 'Failed to get AI response');
   }
 
   const data = await response.json();
-  return data.response;
+  return data.text;
 }
