@@ -31,7 +31,9 @@ import {
   saveChatMessage,
   trackSkillView,
   trackChatCreated,
-  ChatSession
+  ChatSession,
+  getUserPreferences,
+  updateUserPreferences
 } from './services/supabase';
 
 function cn(...inputs: ClassValue[]) {
@@ -90,10 +92,44 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const storedProvider = window.localStorage.getItem('ai-provider') as AIProvider | null;
-    const storedKey = window.localStorage.getItem('ai-api-key');
-    if (storedProvider) setProvider(storedProvider);
-    if (storedKey) setApiKey(storedKey);
+    async function initPreferences() {
+      try {
+        const prefs = await getUserPreferences();
+        const storedProvider = window.localStorage.getItem('ai-provider') as AIProvider | null;
+
+        let initialProvider: AIProvider = 'gemini';
+        const prefProvider = (prefs?.ai_provider || '') as AIProvider;
+        if (prefProvider && ['gemini', 'openai', 'claude'].includes(prefProvider)) {
+          initialProvider = prefProvider;
+        } else if (storedProvider && ['gemini', 'openai', 'claude'].includes(storedProvider)) {
+          initialProvider = storedProvider;
+        }
+
+        setProvider(initialProvider);
+
+        const storedKeyForProvider =
+          window.localStorage.getItem(`ai-api-key-${initialProvider}`) ||
+          window.localStorage.getItem('ai-api-key') ||
+          '';
+        setApiKey(storedKeyForProvider);
+
+        if (!prefs?.ai_provider || prefs.ai_provider !== initialProvider) {
+          await updateUserPreferences({ ai_provider: initialProvider });
+        }
+      } catch (error) {
+        console.error('Error loading AI preferences:', error);
+        const fallbackProvider =
+          (window.localStorage.getItem('ai-provider') as AIProvider | null) || 'gemini';
+        setProvider(fallbackProvider);
+        const storedKey =
+          window.localStorage.getItem(`ai-api-key-${fallbackProvider}`) ||
+          window.localStorage.getItem('ai-api-key') ||
+          '';
+        setApiKey(storedKey);
+      }
+    }
+
+    initPreferences();
   }, []);
 
   useEffect(() => {
@@ -279,6 +315,12 @@ export default function App() {
                   const next = e.target.value as AIProvider;
                   setProvider(next);
                   window.localStorage.setItem('ai-provider', next);
+                  const nextKey =
+                    window.localStorage.getItem(`ai-api-key-${next}`) ||
+                    window.localStorage.getItem('ai-api-key') ||
+                    '';
+                  setApiKey(nextKey);
+                  updateUserPreferences({ ai_provider: next }).catch(console.error);
                 }}
               >
                 <option value="gemini">Gemini (Google)</option>
@@ -353,6 +395,12 @@ export default function App() {
                     const next = e.target.value as AIProvider;
                     setProvider(next);
                     window.localStorage.setItem('ai-provider', next);
+                    const nextKey =
+                      window.localStorage.getItem(`ai-api-key-${next}`) ||
+                      window.localStorage.getItem('ai-api-key') ||
+                      '';
+                    setApiKey(nextKey);
+                    updateUserPreferences({ ai_provider: next }).catch(console.error);
                   }}
                 >
                   <option value="gemini">Gemini (Google)</option>
@@ -373,7 +421,8 @@ export default function App() {
                   value={apiKey}
                   onChange={(e) => {
                     setApiKey(e.target.value);
-                    window.localStorage.setItem('ai-api-key', e.target.value);
+                    const storageKey = `ai-api-key-${provider}`;
+                    window.localStorage.setItem(storageKey, e.target.value);
                   }}
                   placeholder="Paste your API key (stored locally in this browser)"
                   className="bg-white border border-ink/10 rounded-md px-3 py-1.5 text-xs w-full"

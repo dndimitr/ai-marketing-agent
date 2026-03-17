@@ -30,6 +30,7 @@ export interface UserPreferences {
   id: string;
   favorite_skills: string[];
   last_visited_skill?: string;
+  ai_provider?: string;
   theme: string;
   created_at: string;
   updated_at: string;
@@ -200,7 +201,7 @@ export async function getUserPreferences(): Promise<UserPreferences | null> {
   if (!data) {
     const { data: newPrefs } = await supabase
       .from('user_preferences')
-      .insert({ favorite_skills: [], theme: 'light' })
+      .insert({ favorite_skills: [], theme: 'light', ai_provider: 'gemini' })
       .select()
       .single();
     return newPrefs;
