@@ -155,12 +155,7 @@ export default function App() {
         provider,
         skillContent.markdown,
         updatedHistory,
-<<<<<<< HEAD
         input
-=======
-        input,
-        provider
->>>>>>> 6ac6f49 (3)
       );
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
