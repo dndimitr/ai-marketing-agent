@@ -1,30 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import {
-  Search,
-  MessageSquare,
-  BookOpen,
-  ChevronRight,
-  Send,
-  Loader2,
-  Menu,
-  X,
-  Sparkles,
-  BarChart3,
-  PenTool,
-  Globe,
-  TrendingUp,
-  Target,
-  Users,
-  Briefcase,
-  Activity,
-  Clock,
-  Settings
-} from 'lucide-react';
+import { Search, MessageSquare, BookOpen, ChevronRight, Send, Loader as Loader2, Menu, X, Sparkles, ChartBar as BarChart3, PenTool, Globe, TrendingUp, Target, Users, Briefcase, Activity, Clock, Settings } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { fetchSkills, fetchSkillContent } from './services/github';
-import { chatWithSkill } from './services/gemini';
 import { Skill, SkillContent, Message, AIProvider } from './types';
 import {
   createChatSession,
@@ -35,6 +14,7 @@ import {
   getUserPreferences,
   updateUserPreferences
 } from './services/supabase';
+import { chatWithAI } from './services/ai-chat';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -183,12 +163,11 @@ export default function App() {
     }
 
     try {
-      const response = await chatWithSkill(
+      const response = await chatWithAI(
+        provider,
         skillContent.markdown,
         updatedHistory,
-        input,
-        provider,
-        apiKey || undefined
+        input
       );
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
