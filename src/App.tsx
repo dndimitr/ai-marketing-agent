@@ -1,11 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, MessageSquare, BookOpen, ChevronRight, Send, Loader as Loader2, Menu, X, Sparkles, ChartBar as BarChart3, PenTool, Globe, TrendingUp, Target, Users, Briefcase } from 'lucide-react';
+import {
+  Search,
+  MessageSquare,
+  BookOpen,
+  ChevronRight,
+  Send,
+  Loader2,
+  Menu,
+  X,
+  Sparkles,
+  BarChart3,
+  PenTool,
+  Globe,
+  TrendingUp,
+  Target,
+  Users,
+  Briefcase,
+  Activity,
+  Clock,
+  Settings
+} from 'lucide-react';
 import Markdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { fetchSkills, fetchSkillContent } from './services/github';
 import { chatWithSkill } from './services/gemini';
-import { Skill, SkillContent, Message } from './types';
+import { Skill, SkillContent, Message, AIProvider } from './types';
 import {
   createChatSession,
   saveChatMessage,
@@ -40,9 +60,15 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [view, setView] = useState<'guide' | 'chat'>('guide');
+  const [view, setView] = useState<'dashboard' | 'guide' | 'chat'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
+  const [sessionStartedAt] = useState<Date>(new Date());
+  const [totalQuestions, setTotalQuestions] = useState(0);
+  const [lastUserQuestion, setLastUserQuestion] = useState<string | null>(null);
+  const [provider, setProvider] = useState<AIProvider>('gemini');
+  const [apiKey, setApiKey] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +87,13 @@ export default function App() {
       }
     }
     init();
+  }, []);
+
+  useEffect(() => {
+    const storedProvider = window.localStorage.getItem('ai-provider') as AIProvider | null;
+    const storedKey = window.localStorage.getItem('ai-api-key');
+    if (storedProvider) setProvider(storedProvider);
+    if (storedKey) setApiKey(storedKey);
   }, []);
 
   useEffect(() => {
@@ -87,8 +120,9 @@ export default function App() {
   async function handleSendMessage() {
     if (!input.trim() || !skillContent || isSending || !selectedSkill) return;
 
-    if (!currentSession) {
-      const session = await createChatSession(
+    let session = currentSession;
+    if (!session) {
+      session = await createChatSession(
         selectedSkill.name,
         selectedSkill.path,
         selectedSkill.category
@@ -100,30 +134,39 @@ export default function App() {
     }
 
     const userMessage: Message = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
+    const updatedHistory = [...messages, userMessage];
+    setMessages(updatedHistory);
+    setTotalQuestions((prev) => prev + 1);
+    setLastUserQuestion(input);
     setInput('');
     setIsSending(true);
     setView('chat');
 
-    if (currentSession) {
-      await saveChatMessage(currentSession.id, 'user', input);
+    if (session) {
+      await saveChatMessage(session.id, 'user', input);
     }
 
     try {
-      const response = await chatWithSkill(skillContent.markdown, messages, input);
+      const response = await chatWithSkill(
+        skillContent.markdown,
+        updatedHistory,
+        input,
+        provider,
+        apiKey || undefined
+      );
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
 
-      if (currentSession) {
-        await saveChatMessage(currentSession.id, 'model', response);
+      if (session) {
+        await saveChatMessage(session.id, 'model', response);
       }
     } catch (error) {
       console.error('Error in chat:', error);
       const errorMessage = 'Sorry, I encountered an error. Please try again.';
       setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
 
-      if (currentSession) {
-        await saveChatMessage(currentSession.id, 'model', errorMessage);
+      if (session) {
+        await saveChatMessage(session.id, 'model', errorMessage);
       }
     } finally {
       setIsSending(false);
@@ -218,34 +261,127 @@ export default function App() {
               </button>
             )}
             <div>
-              <h2 className="font-display italic text-xl">{selectedSkill?.name}</h2>
-              <p className="text-[10px] uppercase tracking-widest opacity-50">{selectedSkill?.category}</p>
+              <h2 className="font-display italic text-xl">
+                {view === 'dashboard' ? 'Marketing Agent Dashboard' : selectedSkill?.name}
+              </h2>
+              <p className="text-[10px] uppercase tracking-widest opacity-50">
+                {view === 'dashboard' ? 'Session overview & quick actions' : selectedSkill?.category}
+              </p>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center text-[11px] opacity-60 border border-ink/10 rounded-lg px-2 py-1 bg-bg/80">
+              <span className="mr-1 uppercase tracking-widest">AI</span>
+              <select
+                className="bg-transparent text-xs outline-none cursor-pointer"
+                value={provider}
+                onChange={(e) => {
+                  const next = e.target.value as AIProvider;
+                  setProvider(next);
+                  window.localStorage.setItem('ai-provider', next);
+                }}
+              >
+                <option value="gemini">Gemini (Google)</option>
+                <option value="openai">OpenAI</option>
+                <option value="claude">Claude (Anthropic)</option>
+              </select>
+            </div>
+            <button
+              onClick={() => setShowSettings((v) => !v)}
+              className="p-2 rounded-lg hover:bg-ink/5 flex items-center gap-2 text-xs"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">API Key</span>
+            </button>
 
-          <div className="flex bg-ink/5 p-1 rounded-lg">
-            <button 
-              onClick={() => setView('guide')}
-              className={cn(
-                "px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2",
-                view === 'guide' ? "bg-bg shadow-sm text-ink" : "text-ink/60 hover:text-ink"
-              )}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              Expert Guide
-            </button>
-            <button 
-              onClick={() => setView('chat')}
-              className={cn(
-                "px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2",
-                view === 'chat' ? "bg-bg shadow-sm text-ink" : "text-ink/60 hover:text-ink"
-              )}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              AI Assistant
-            </button>
+            <div className="flex bg-ink/5 p-1 rounded-lg">
+              <button
+                onClick={() => setView('dashboard')}
+                className={cn(
+                  "px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2",
+                  view === 'dashboard' ? "bg-bg shadow-sm text-ink" : "text-ink/60 hover:text-ink"
+                )}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Dashboard
+              </button>
+              <button 
+                onClick={() => setView('guide')}
+                className={cn(
+                  "px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2",
+                  view === 'guide' ? "bg-bg shadow-sm text-ink" : "text-ink/60 hover:text-ink"
+                )}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Expert Guide
+              </button>
+              <button 
+                onClick={() => setView('chat')}
+                className={cn(
+                  "px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2",
+                  view === 'chat' ? "bg-bg shadow-sm text-ink" : "text-ink/60 hover:text-ink"
+                )}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                AI Assistant
+              </button>
+            </div>
           </div>
         </header>
+
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className="border-b border-ink/10 bg-bg/80 backdrop-blur-sm px-6 py-3 flex flex-col gap-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="uppercase tracking-widest opacity-60">AI Configuration</span>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-[11px] opacity-60 hover:opacity-100"
+              >
+                Close
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+              <div className="flex flex-col gap-1 flex-1">
+                <label className="opacity-60">
+                  Provider
+                </label>
+                <select
+                  className="bg-white border border-ink/10 rounded-md px-2 py-1 text-xs"
+                  value={provider}
+                  onChange={(e) => {
+                    const next = e.target.value as AIProvider;
+                    setProvider(next);
+                    window.localStorage.setItem('ai-provider', next);
+                  }}
+                >
+                  <option value="gemini">Gemini (Google)</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="claude">Claude (Anthropic)</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1 flex-[2] w-full">
+                <label className="opacity-60">
+                  {provider === 'gemini'
+                    ? 'Gemini API Key'
+                    : provider === 'openai'
+                      ? 'OpenAI API Key'
+                      : 'Claude API Key'}
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    window.localStorage.setItem('ai-api-key', e.target.value);
+                  }}
+                  placeholder="Paste your API key (stored locally in this browser)"
+                  className="bg-white border border-ink/10 rounded-md px-3 py-1.5 text-xs w-full"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto">
@@ -253,6 +389,159 @@ export default function App() {
             <div className="h-full flex flex-col items-center justify-center gap-4 opacity-50">
               <Loader2 className="w-6 h-6 animate-spin" />
               <p className="text-sm italic">Loading skill guidelines...</p>
+            </div>
+          ) : view === 'dashboard' ? (
+            <div className="max-w-5xl mx-auto p-10 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
+                    <span>Active skill</span>
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <p className="font-display italic text-lg">
+                    {selectedSkill?.name || 'Select a skill from the left'}
+                  </p>
+                  <p className="text-[11px] opacity-60">
+                    {selectedSkill?.category || 'No category'}
+                  </p>
+                </div>
+
+                <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
+                    <span>Session stats</span>
+                    <BarChart3 className="w-4 h-4" />
+                  </div>
+                  <p className="text-2xl font-semibold">{totalQuestions}</p>
+                  <p className="text-[11px] opacity-60">Questions asked this session</p>
+                  <div className="flex items-center gap-1 text-[11px] opacity-60 mt-1">
+                    <Clock className="w-3 h-3" />
+                    <span>
+                      Started{' '}
+                      {sessionStartedAt.toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
+                    <span>Latest question</span>
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <p className="text-sm line-clamp-3">
+                    {lastUserQuestion || 'Your latest question will appear here.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-white border border-ink/10 rounded-2xl p-6 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs uppercase tracking-widest opacity-60">
+                      Quick start playbooks
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <button
+                      disabled={!selectedSkill}
+                      onClick={() => {
+                        if (!selectedSkill) return;
+                        setInput(`Audit my current ${selectedSkill.name.toLowerCase()} setup and give me a 3-step action plan.`);
+                        setView('chat');
+                      }}
+                      className={cn(
+                        "text-left px-4 py-3 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors",
+                        !selectedSkill && "opacity-40 cursor-not-allowed"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Target className="w-4 h-4" />
+                        <span className="font-medium">3-step improvement plan</span>
+                      </div>
+                      <p className="text-[12px] opacity-70">
+                        Get a prioritized, short roadmap based on the current skill.
+                      </p>
+                    </button>
+
+                    <button
+                      disabled={!selectedSkill}
+                      onClick={() => {
+                        if (!selectedSkill) return;
+                        setInput(`Suggest 5 high-impact experiments for ${selectedSkill.name.toLowerCase()}, with hypothesis and success metrics.`);
+                        setView('chat');
+                      }}
+                      className={cn(
+                        "text-left px-4 py-3 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors",
+                        !selectedSkill && "opacity-40 cursor-not-allowed"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-4 h-4" />
+                        <span className="font-medium">Experiment ideas</span>
+                      </div>
+                      <p className="text-[12px] opacity-70">
+                        Generate test ideas with clear hypotheses and KPIs.
+                      </p>
+                    </button>
+
+                    <button
+                      disabled={!selectedSkill}
+                      onClick={() => {
+                        if (!selectedSkill) return;
+                        setInput(`Give me a checklist to review my ${selectedSkill.name.toLowerCase()} in under 10 minutes.`);
+                        setView('chat');
+                      }}
+                      className={cn(
+                        "text-left px-4 py-3 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors",
+                        !selectedSkill && "opacity-40 cursor-not-allowed"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <PenTool className="w-4 h-4" />
+                        <span className="font-medium">10-min checklist</span>
+                      </div>
+                      <p className="text-[12px] opacity-70">
+                        A concise checklist tailored to this skill.
+                      </p>
+                    </button>
+
+                    <button
+                      disabled={!selectedSkill}
+                      onClick={() => {
+                        if (!selectedSkill) return;
+                        setInput(`Act as my senior marketing lead for ${selectedSkill.name.toLowerCase()} and ask me 5 diagnostic questions before giving advice.`);
+                        setView('chat');
+                      }}
+                      className={cn(
+                        "text-left px-4 py-3 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors",
+                        !selectedSkill && "opacity-40 cursor-not-allowed"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Users className="w-4 h-4" />
+                        <span className="font-medium">Guided discovery</span>
+                      </div>
+                      <p className="text-[12px] opacity-70">
+                        Let the agent interview you before prescribing work.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-ink/10 rounded-2xl p-6 shadow-sm space-y-3">
+                  <h3 className="text-xs uppercase tracking-widest opacity-60">
+                    How to get the best answers
+                  </h3>
+                  <ul className="text-[12px] space-y-2 opacity-80 list-disc list-inside">
+                    <li>Mention your product, audience, and main goal in 1–2 sentences.</li>
+                    <li>Paste URLs when possible so the agent can analyze the page.</li>
+                    <li>Ask for concrete formats: &quot;3 headlines&quot;, &quot;email outline&quot;, &quot;AB test plan&quot;.</li>
+                    <li>Iterate: refine based on what you like or don&apos;t like.</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           ) : view === 'guide' ? (
             <div className="max-w-3xl mx-auto p-12">

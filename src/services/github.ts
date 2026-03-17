@@ -1,7 +1,12 @@
 import { Skill, SkillContent } from '../types';
 
-const BASE_URL = 'https://api.github.com/repos/coreyhaines31/marketingskills/contents';
-const RAW_BASE_URL = 'https://raw.githubusercontent.com/coreyhaines31/marketingskills/main';
+const REPO_OWNER = import.meta.env.VITE_SKILLS_REPO_OWNER || 'coreyhaines31';
+const REPO_NAME = import.meta.env.VITE_SKILLS_REPO_NAME || 'marketingskills';
+
+const BASE_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents`;
+const RAW_BASE_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main`;
+
+const skillContentCache = new Map<string, SkillContent>();
 
 export async function fetchSkills(): Promise<Skill[]> {
   const response = await fetch(`${BASE_URL}/skills`);
@@ -18,14 +23,20 @@ export async function fetchSkills(): Promise<Skill[]> {
 }
 
 export async function fetchSkillContent(skillPath: string): Promise<SkillContent> {
+  const cached = skillContentCache.get(skillPath);
+  if (cached) return cached;
+
   const response = await fetch(`${RAW_BASE_URL}/skills/${skillPath}/SKILL.md`);
   if (!response.ok) throw new Error(`Failed to fetch content for ${skillPath}`);
   const markdown = await response.text();
-  
-  return {
+
+  const content: SkillContent = {
     name: formatSkillName(skillPath),
     markdown
   };
+
+  skillContentCache.set(skillPath, content);
+  return content;
 }
 
 function formatSkillName(path: string): string {
