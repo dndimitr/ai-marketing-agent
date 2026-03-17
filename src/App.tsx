@@ -1,28 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
-  Search, 
-  MessageSquare, 
-  BookOpen, 
-  ChevronRight, 
-  Send, 
-  Loader2, 
-  Menu, 
-  X,
-  Sparkles,
-  BarChart3,
-  PenTool,
-  Globe,
-  TrendingUp,
-  Target,
-  Users,
-  Briefcase
-} from 'lucide-react';
+import { Search, MessageSquare, BookOpen, ChevronRight, Send, Loader as Loader2, Menu, X, Sparkles, ChartBar as BarChart3, PenTool, Globe, TrendingUp, Target, Users, Briefcase } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { fetchSkills, fetchSkillContent } from './services/github';
 import { chatWithSkill } from './services/gemini';
 import { Skill, SkillContent, Message } from './types';
+import {
+  createChatSession,
+  saveChatMessage,
+  trackSkillView,
+  trackChatCreated,
+  ChatSession
+} from './services/supabase';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -52,6 +42,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<'guide' | 'chat'>('guide');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -81,9 +72,11 @@ export default function App() {
     setLoadingContent(true);
     setMessages([]);
     setView('guide');
+    setCurrentSession(null);
     try {
       const content = await fetchSkillContent(skill.path);
       setSkillContent(content);
+      await trackSkillView(skill.name, skill.path);
     } catch (error) {
       console.error('Error fetching skill content:', error);
     } finally {
@@ -92,7 +85,19 @@ export default function App() {
   }
 
   async function handleSendMessage() {
-    if (!input.trim() || !skillContent || isSending) return;
+    if (!input.trim() || !skillContent || isSending || !selectedSkill) return;
+
+    if (!currentSession) {
+      const session = await createChatSession(
+        selectedSkill.name,
+        selectedSkill.path,
+        selectedSkill.category
+      );
+      if (session) {
+        setCurrentSession(session);
+        await trackChatCreated(selectedSkill.path);
+      }
+    }
 
     const userMessage: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMessage]);
@@ -100,13 +105,26 @@ export default function App() {
     setIsSending(true);
     setView('chat');
 
+    if (currentSession) {
+      await saveChatMessage(currentSession.id, 'user', input);
+    }
+
     try {
       const response = await chatWithSkill(skillContent.markdown, messages, input);
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
+
+      if (currentSession) {
+        await saveChatMessage(currentSession.id, 'model', response);
+      }
     } catch (error) {
       console.error('Error in chat:', error);
-      setMessages(prev => [...prev, { role: 'model', content: 'Sorry, I encountered an error. Please try again.' }]);
+      const errorMessage = 'Sorry, I encountered an error. Please try again.';
+      setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
+
+      if (currentSession) {
+        await saveChatMessage(currentSession.id, 'model', errorMessage);
+      }
     } finally {
       setIsSending(false);
     }
