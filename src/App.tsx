@@ -64,6 +64,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const translatedSkillCacheRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     async function init() {
@@ -128,24 +129,32 @@ export default function App() {
 
       // Превод на съдържанието на умението на български
       try {
-        const translationPrompt = `
-Преведи на български следния Markdown текст, като запазиш структурата, форматирането и всички списъци.
-Не добавяй свои обяснения, върни само преведения Markdown.
+        const cacheKey = `${provider}:${skill.path}`;
+        const cached = translatedSkillCacheRef.current.get(cacheKey);
+        if (cached) {
+          setSkillContent({ name: content.name, markdown: cached });
+        } else {
+          // В Edge Function съдържанието на skill-а вече се влага в systemInstruction.
+          // Тук не дублираме content.markdown още веднъж в user prompt-а, за да намалим токени/латентност.
+          const translationPrompt = `
+Преведи на български текста, който се намира в системния prompt секцията
+„SKILL GUIDELINES (SOURCE OF TRUTH)“ (това е оригиналният Markdown на умението).
 
-${content.markdown}
+Запази структурата, форматирането, заглавията, кодовите блокове и всички списъци.
+Върни само преведения Markdown (без други обяснения, без заглавия типа „SKILL GUIDELINES“).
 `.trim();
 
-        const translated = await chatWithAI(
-          provider,
-          content.markdown,
-          [],
-          translationPrompt
-        );
+          const translated = await chatWithAI(
+            provider,
+            content.markdown,
+            [],
+            translationPrompt
+          );
 
-        setSkillContent({
-          name: content.name,
-          markdown: translated || content.markdown,
-        });
+          const translatedMarkdown = translated || content.markdown;
+          translatedSkillCacheRef.current.set(cacheKey, translatedMarkdown);
+          setSkillContent({ name: content.name, markdown: translatedMarkdown });
+        }
       } catch (translationError) {
         console.error('Error translating skill content:', translationError);
       }
