@@ -15,6 +15,7 @@ import {
   updateUserPreferences
 } from './services/supabase';
 import { chatWithAI } from './services/ai-chat';
+import { translateSkill } from './services/translate';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -65,6 +66,7 @@ export default function App() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const translatedSkillCacheRef = useRef<Map<string, string>>(new Map());
+  const translateRequestIdRef = useRef(0);
 
   useEffect(() => {
     async function init() {
@@ -126,40 +128,35 @@ export default function App() {
     try {
       const content = await fetchSkillContent(skill.path);
       setSkillContent(content);
+      // Показваме English веднага; преводът (BG) се зарежда асинхронно и сменя съдържанието,
+      // когато/ако кешът в Supabase върне резултат.
 
-      // Превод на съдържанието на умението на български
-      try {
-        const cacheKey = `${provider}:${skill.path}`;
-        const cached = translatedSkillCacheRef.current.get(cacheKey);
-        if (cached) {
+      void trackSkillView(skill.name, skill.path).catch(console.error);
+
+      const currentTranslateId = ++translateRequestIdRef.current;
+      const cacheKey = `${provider}:${skill.path}`;
+
+      // Memory cache е вторичен; основният кеш е в Supabase.
+      const cached = translatedSkillCacheRef.current.get(cacheKey);
+      if (cached) {
+        // Уверяваме се, че потребителят още е на същия skill/provider.
+        if (translateRequestIdRef.current === currentTranslateId) {
           setSkillContent({ name: content.name, markdown: cached });
-        } else {
-          // В Edge Function съдържанието на skill-а вече се влага в systemInstruction.
-          // Тук не дублираме content.markdown още веднъж в user prompt-а, за да намалим токени/латентност.
-          const translationPrompt = `
-Преведи на български текста, който се намира в системния prompt секцията
-„SKILL GUIDELINES (SOURCE OF TRUTH)“ (това е оригиналният Markdown на умението).
-
-Запази структурата, форматирането, заглавията, кодовите блокове и всички списъци.
-Върни само преведения Markdown (без други обяснения, без заглавия типа „SKILL GUIDELINES“).
-`.trim();
-
-          const translated = await chatWithAI(
-            provider,
-            content.markdown,
-            [],
-            translationPrompt
-          );
-
-          const translatedMarkdown = translated || content.markdown;
-          translatedSkillCacheRef.current.set(cacheKey, translatedMarkdown);
-          setSkillContent({ name: content.name, markdown: translatedMarkdown });
         }
-      } catch (translationError) {
-        console.error('Error translating skill content:', translationError);
-      }
+      } else {
+        (async () => {
+          try {
+            const translated = await translateSkill(provider, skill.path, content.markdown);
+            const translatedMarkdown = translated || content.markdown;
+            translatedSkillCacheRef.current.set(cacheKey, translatedMarkdown);
 
-      await trackSkillView(skill.name, skill.path);
+            if (translateRequestIdRef.current !== currentTranslateId) return;
+            setSkillContent({ name: content.name, markdown: translatedMarkdown });
+          } catch (translationError) {
+            console.error('Error translating skill content:', translationError);
+          }
+        })();
+      }
     } catch (error) {
       console.error('Error fetching skill content:', error);
     } finally {
