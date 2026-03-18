@@ -69,6 +69,7 @@ export default function App() {
   const translatedSkillCacheRef = useRef<Map<string, string>>(new Map());
   const translateRequestIdRef = useRef(0);
   const [skillUsage, setSkillUsage] = useState<SkillUsage | null>(null);
+  const [aiLoadingText, setAiLoadingText] = useState<string>('');
 
   useEffect(() => {
     async function init() {
@@ -120,6 +121,24 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!isSending) {
+      setAiLoadingText('');
+      return;
+    }
+
+    const frames = ['Зареждам', 'Зареждам.', 'Зареждам..', 'Зареждам...'];
+    let i = 0;
+    setAiLoadingText(frames[0]);
+
+    const id = window.setInterval(() => {
+      i = (i + 1) % frames.length;
+      setAiLoadingText(frames[i]);
+    }, 350);
+
+    return () => window.clearInterval(id);
+  }, [isSending]);
 
   async function handleSelectSkill(skill: Skill) {
     setSelectedSkill(skill);
@@ -787,9 +806,16 @@ export default function App() {
                   </div>
                 ))}
                 {isSending && (
-                  <div className="flex items-start gap-2">
-                    <div className="bg-white border border-ink/10 p-4 rounded-2xl rounded-tl-none shadow-sm">
-                      <Loader2 className="w-4 h-4 animate-spin opacity-50" />
+                  <div className="flex flex-col gap-2 items-start">
+                    <div
+                      className={cn(
+                        "max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed",
+                        "bg-white border border-ink/10 rounded-tl-none shadow-sm"
+                      )}
+                    >
+                      <div className="markdown-body">
+                        <Markdown>{aiLoadingText}</Markdown>
+                      </div>
                     </div>
                   </div>
                 )}
