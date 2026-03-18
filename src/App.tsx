@@ -16,6 +16,7 @@ import {
 } from './services/supabase';
 import { chatWithAI } from './services/ai-chat';
 import { translateSkill } from './services/translate';
+import { extractSkillUsage, type SkillUsage } from './services/skillTips';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -67,6 +68,7 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const translatedSkillCacheRef = useRef<Map<string, string>>(new Map());
   const translateRequestIdRef = useRef(0);
+  const [skillUsage, setSkillUsage] = useState<SkillUsage | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -123,11 +125,19 @@ export default function App() {
     setSelectedSkill(skill);
     setLoadingContent(true);
     setMessages([]);
+    setSkillUsage(null);
     setView('guide');
     setCurrentSession(null);
     try {
       const content = await fetchSkillContent(skill.path);
       setSkillContent(content);
+      // Веднага извличаме подсказки от English SKILL.md (без допълнителни API call-и).
+      try {
+        const usage = extractSkillUsage(content.markdown);
+        setSkillUsage(usage);
+      } catch (e) {
+        console.error('Error extracting skill usage (en):', e);
+      }
       // Показваме English веднага; преводът (BG) се зарежда асинхронно и сменя съдържанието,
       // когато/ако кешът в Supabase върне резултат.
 
@@ -152,6 +162,14 @@ export default function App() {
 
             if (translateRequestIdRef.current !== currentTranslateId) return;
             setSkillContent({ name: content.name, markdown: translatedMarkdown });
+
+            // Обновяваме подсказките след BG превода.
+            try {
+              const usageBg = extractSkillUsage(translatedMarkdown);
+              setSkillUsage(usageBg);
+            } catch (e) {
+              console.error('Error extracting skill usage (bg):', e);
+            }
           } catch (translationError) {
             console.error('Error translating skill content:', translationError);
           }
@@ -225,6 +243,78 @@ export default function App() {
   );
 
   const categories = Array.from(new Set(filteredSkills.map(s => s.category || 'General'))).sort();
+
+  const principles = (skillUsage?.principles || []).filter(Boolean);
+  const taskQuestions = (skillUsage?.taskQuestions || []).filter(Boolean);
+  const checklistItems = (skillUsage?.checklistItems || []).filter(Boolean);
+  const stepTitles = (skillUsage?.stepTitles || []).filter(Boolean);
+
+  function buildMiniAuditPrompt(): string {
+    if (!selectedSkill) return '';
+    const principlesBlock = principles.length
+      ? `\nПринципи/рамка от skill-а:\n${principles.slice(0, 6).map((p) => `- ${p}`).join('\n')}`
+      : '';
+    const checklistBlock = checklistItems.length
+      ? `\nЧеклист (извлечен от skill-а):\n${checklistItems.slice(0, 8).map((c) => `- ${c}`).join('\n')}`
+      : '';
+
+    return (
+      `Дай ми мини-аудит за "${selectedSkill.name}" по моя URL: [постави URL].\n` +
+      principlesBlock +
+      checklistBlock +
+      `\nФормат:\n` +
+      `1) Най-големите 3 пропуска\n` +
+      `2) 2 конкретни подобрения за следващата седмица (как ще помогнат)\n` +
+      `3) План за тестове (A/B) + KPI/метрики`
+    );
+  }
+
+  function build3StepsPrompt(): string {
+    if (!selectedSkill) return '';
+    const framework = stepTitles.length
+      ? `Рамка/стъпки от skill-а:\n${stepTitles.slice(0, 3).map((s) => `- ${s}`).join('\n')}`
+      : principles.length
+        ? `Принципи от skill-а:\n${principles.slice(0, 3).map((p) => `- ${p}`).join('\n')}`
+        : '';
+
+    return (
+      `Дай ми 3 стъпки за подобрение по "${selectedSkill.name}".\n` +
+      `Подреди ги по impact/effort.\n` +
+      (framework ? `${framework}\n` : '') +
+      `За всяка стъпка посочи: цел, какво да направя, критерий за успех (KPI/метрика).`
+    );
+  }
+
+  function buildChecklistPrompt(): string {
+    if (!selectedSkill) return '';
+    const points = checklistItems.length
+      ? `\nТочки за чеклист (от skill-а):\n${checklistItems.slice(0, 10).map((c) => `- ${c}`).join('\n')}`
+      : '';
+
+    return (
+      `Създай ми 10-минутен чеклист за "${selectedSkill.name}".\n` +
+      `Формат: 8–10 кратки точки за проверка, подредени по важност (първо най-големия лост).\n` +
+      points
+    );
+  }
+
+  function buildDiagnosticsPrompt(): string {
+    if (!selectedSkill) return '';
+    const qBlock = taskQuestions.length
+      ? `\nДиагностични въпроси (от skill-а):\n${taskQuestions
+          .slice(0, 7)
+          .map((q) => `- ${q}`)
+          .join('\n')}\n`
+      : '';
+
+    return (
+      `Преди да препоръчаш решения по "${selectedSkill.name}",\n` +
+      `задай ми диагностични въпроси и чак след това дай конкретен план.\n` +
+      (qBlock ||
+        `Задай ми 5 диагностични въпроса: продукт, аудитория, канал, текущо състояние, цел/KPI.\n`) +
+      `Отговори в един следващ съобщение с: (1) въпросите (2) препоръки, базирани на отговорите.`
+    );
+  }
 
   if (loading) {
     return (
@@ -617,20 +707,23 @@ export default function App() {
                       </div>
 
                       <p className="text-[12px] opacity-80 mb-3">
-                        За най-точни отговори включи: продукт, аудитория, текущо състояние и цел.
-                        Ако имаш URL, добави го.
+                        {principles.length ? (
+                          <>
+                            В skill-а фокусът е върху: <span className="font-semibold">{principles[0]}</span>.
+                            За най-точни отговори включи: продукт, аудитория, текущо състояние и цел.
+                            Ако имаш URL, добави го.
+                          </>
+                        ) : (
+                          <>
+                            За най-точни отговори включи: продукт, аудитория, текущо състояние и цел.
+                            Ако имаш URL, добави го.
+                          </>
+                        )}
                       </p>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <button
-                          onClick={() =>
-                            setInput(
-                              `Дай ми мини-аудит за "${selectedSkill.name}" по моя URL: [постави URL].\n` +
-                                `1) Най-големите 3 пропуска\n` +
-                                `2) 2 конкретни подобрения за следващата седмица\n` +
-                                `3) План за тестове (A/B) + KPI/метрики`
-                            )
-                          }
+                          onClick={() => setInput(buildMiniAuditPrompt())}
                           className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -641,13 +734,7 @@ export default function App() {
                         </button>
 
                         <button
-                          onClick={() =>
-                            setInput(
-                              `Дай ми 3 стъпки за подобрение по "${selectedSkill.name}". ` +
-                                `Подреди ги по impact/effort. ` +
-                                `Всяка стъпка да има: цел, какво да направя, критерий за успех.`
-                            )
-                          }
+                          onClick={() => setInput(build3StepsPrompt())}
                           className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -658,12 +745,7 @@ export default function App() {
                         </button>
 
                         <button
-                          onClick={() =>
-                            setInput(
-                              `Създай ми 10-минутен чеклист за "${selectedSkill.name}".\n` +
-                                `Формат: 8-10 кратки точки за проверка, подредени по важност.`
-                            )
-                          }
+                          onClick={() => setInput(buildChecklistPrompt())}
                           className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-1">
@@ -674,13 +756,7 @@ export default function App() {
                         </button>
 
                         <button
-                          onClick={() =>
-                            setInput(
-                              `Преди да препоръчаш решения по "${selectedSkill.name}", ` +
-                                `задай ми 5 диагностични въпроса (продукт, аудитория, канал, текущо състояние, цел/KPI). ` +
-                                `После дай препоръки, базирани на отговорите.`
-                            )
-                          }
+                          onClick={() => setInput(buildDiagnosticsPrompt())}
                           className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
                         >
                           <div className="flex items-center gap-2 mb-1">
