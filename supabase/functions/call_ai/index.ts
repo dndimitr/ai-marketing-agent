@@ -1,3 +1,5 @@
+import { GoogleGenAI } from 'https://esm.sh/@google/genai';
+
 type Role = 'user' | 'model';
 type Provider = 'gemini' | 'openai' | 'claude';
 
@@ -119,38 +121,25 @@ async function callProvider(
     return textPart?.text ?? '';
   }
 
-  // Gemini (default)
-  const geminiHistory = trimmed.map((m) => ({
-    role: m.role,
-    parts: [{ text: m.content }],
-  }));
+  // Gemini
+  const ai = new GoogleGenAI({ apiKey });
+  const model = 'gemini-3.1-pro-preview';
 
-  const res = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          { role: 'user', parts: [{ text: systemInstruction }] },
-          ...geminiHistory,
-          { role: 'user', parts: [{ text: message }] },
-        ],
-      }),
+  const chat = ai.chats.create({
+    model,
+    config: {
+      systemInstruction,
+      // Keep tools disabled for now; tool wiring varies by model/runtime.
+      // If you want, we can re-enable once everything works end-to-end.
     },
-  );
+    history: trimmed.map((m) => ({
+      role: m.role,
+      parts: [{ text: m.content }],
+    })),
+  });
 
-  if (!res.ok) {
-    throw new Error(`Gemini error: ${res.status} ${await res.text()}`);
-  }
-
-  const json = await res.json();
-  const text =
-    json.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join(' ') ?? '';
-  return text;
+  const result = await chat.sendMessage({ message });
+  return result.text ?? '';
 }
 
 Deno.serve(async (req) => {
