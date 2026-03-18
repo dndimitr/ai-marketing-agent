@@ -606,6 +606,93 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                {selectedSkill && (
+                  <div className="w-full max-w-xl mt-3">
+                    <div className="bg-white border border-ink/10 rounded-2xl p-4 text-left opacity-100 shadow-sm">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-xs uppercase tracking-widest opacity-60">
+                          Как да използваш най-добре skill-а
+                        </h4>
+                        <span className="text-[11px] opacity-60">„{selectedSkill.name}“</span>
+                      </div>
+
+                      <p className="text-[12px] opacity-80 mb-3">
+                        За най-точни отговори включи: продукт, аудитория, текущо състояние и цел.
+                        Ако имаш URL, добави го.
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          onClick={() =>
+                            setInput(
+                              `Дай ми мини-аудит за "${selectedSkill.name}" по моя URL: [постави URL].\n` +
+                                `1) Най-големите 3 пропуска\n` +
+                                `2) 2 конкретни подобрения за следващата седмица\n` +
+                                `3) План за тестове (A/B) + KPI/метрики`
+                            )
+                          }
+                          className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <Globe className="w-4 h-4" />
+                            <span className="font-medium text-[12px]">Мини-аудит</span>
+                          </div>
+                          <p className="text-[11px] opacity-70">3 пропуска + 2 действия + тест план</p>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            setInput(
+                              `Дай ми 3 стъпки за подобрение по "${selectedSkill.name}". ` +
+                                `Подреди ги по impact/effort. ` +
+                                `Всяка стъпка да има: цел, какво да направя, критерий за успех.`
+                            )
+                          }
+                          className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <Target className="w-4 h-4" />
+                            <span className="font-medium text-[12px]">3 стъпки</span>
+                          </div>
+                          <p className="text-[11px] opacity-70">Impact/effort + критерии за успех</p>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            setInput(
+                              `Създай ми 10-минутен чеклист за "${selectedSkill.name}".\n` +
+                                `Формат: 8-10 кратки точки за проверка, подредени по важност.`
+                            )
+                          }
+                          className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <PenTool className="w-4 h-4" />
+                            <span className="font-medium text-[12px]">10-мин чеклист</span>
+                          </div>
+                          <p className="text-[11px] opacity-70">Бърза проверка по важност</p>
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            setInput(
+                              `Преди да препоръчаш решения по "${selectedSkill.name}", ` +
+                                `задай ми 5 диагностични въпроса (продукт, аудитория, канал, текущо състояние, цел/KPI). ` +
+                                `После дай препоръки, базирани на отговорите.`
+                            )
+                          }
+                          className="text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <Users className="w-4 h-4" />
+                            <span className="font-medium text-[12px]">Диагностика</span>
+                          </div>
+                          <p className="text-[11px] opacity-70">5 въпроса → после конкретни действия</p>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {messages.map((msg, i) => (
                   <div key={i} className={cn(
                     "flex flex-col gap-2",
