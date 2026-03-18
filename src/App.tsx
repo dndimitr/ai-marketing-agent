@@ -801,7 +801,7 @@ export default function App() {
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-semibold opacity-40">
                     <Globe className="w-3 h-3" />
-                    <span>Анализ на уебсайт е активиран</span>
+                    <span>Анализ на уебсайт: активен при URL</span>
                   </div>
                 </div>
                 <div className="relative flex items-center gap-2">
@@ -822,7 +822,7 @@ export default function App() {
                   </button>
                 </div>
                 <p className="text-[10px] text-center mt-3 opacity-30 uppercase tracking-widest">
-                  Задвижвано от Gemini 3.1 Pro и експертни маркетинг умения
+                  Задвижвано от избрания AI модел и skill насоките
                 </p>
               </div>
             </div>
