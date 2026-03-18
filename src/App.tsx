@@ -236,11 +236,13 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="h-screen flex overflow-hidden relative">
       {/* Sidebar */}
       <aside className={cn(
-        "bg-ink text-bg w-80 flex-shrink-0 flex flex-col transition-all duration-300 z-30",
-        !sidebarOpen && "-ml-80"
+        "bg-ink text-bg flex-shrink-0 flex flex-col transition-all duration-300 z-30 transform",
+        "fixed top-0 left-0 h-full w-[85vw] max-w-xs",
+        "lg:static lg:transform-none lg:w-80",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-6 border-b border-bg/10">
           <div className="flex items-center justify-between mb-6">
@@ -251,7 +253,7 @@ export default function App() {
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50" />
-            <input 
+            <input
               type="text" 
               placeholder="Търси умения..."
               className="w-full bg-bg/5 border border-bg/10 rounded-lg py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-bg/30"
@@ -299,9 +301,9 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col relative bg-bg min-w-0">
+      <main className="flex-1 flex flex-col relative bg-bg min-w-0 lg:ml-0">
         {/* Header */}
-        <header className="h-16 border-b border-ink/10 flex items-center justify-between px-6 bg-bg/80 backdrop-blur-sm sticky top-0 z-20">
+        <header className="h-16 border-b border-ink/10 flex items-center justify-between px-4 sm:px-6 bg-bg/80 backdrop-blur-sm sticky top-0 z-20">
           <div className="flex items-center gap-4">
             {!sidebarOpen && (
               <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-ink/5 rounded-lg">
@@ -347,7 +349,7 @@ export default function App() {
               <span className="hidden sm:inline">API Key</span>
             </button>
 
-            <div className="flex bg-ink/5 p-1 rounded-lg">
+          <div className="flex bg-ink/5 p-1 rounded-lg overflow-x-auto whitespace-nowrap">
               <button
                 onClick={() => setView('dashboard')}
                 className={cn(
@@ -430,7 +432,7 @@ export default function App() {
               <p className="text-sm italic">Зареждане на ръководството за умението...</p>
             </div>
           ) : view === 'dashboard' ? (
-            <div className="max-w-5xl mx-auto p-10 space-y-8">
+            <div className="max-w-5xl mx-auto p-4 sm:p-10 space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white border border-ink/10 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
                   <div className="flex items-center justify-between text-xs uppercase tracking-widest opacity-60">
@@ -583,14 +585,14 @@ export default function App() {
               </div>
             </div>
           ) : view === 'guide' ? (
-            <div className="max-w-3xl mx-auto p-12">
+            <div className="max-w-3xl mx-auto p-6 sm:p-12">
               <div className="markdown-body">
                 <Markdown>{skillContent?.markdown}</Markdown>
               </div>
             </div>
           ) : (
             <div className="h-full flex flex-col max-w-4xl mx-auto w-full">
-              <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+              <div className="flex-1 p-3 sm:p-6 space-y-6 overflow-y-auto">
                 {messages.length === 0 && (
                   <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">
                     <div className="w-16 h-16 rounded-full bg-ink/5 flex items-center justify-center">
@@ -632,7 +634,7 @@ export default function App() {
               </div>
 
               {/* Input Area */}
-              <div className="p-6 border-t border-ink/10 bg-bg/50 backdrop-blur-md">
+              <div className="p-4 sm:p-6 border-t border-ink/10 bg-bg/50 backdrop-blur-md">
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-semibold opacity-40">
                     <Globe className="w-3 h-3" />
