@@ -214,7 +214,8 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('call_ai error', err);
-    return new Response('Internal error', {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(message, {
       status: 500,
       headers: corsHeaders,
     });
