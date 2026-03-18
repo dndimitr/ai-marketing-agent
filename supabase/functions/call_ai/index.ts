@@ -1,5 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
-
 type Role = 'user' | 'model';
 type Provider = 'gemini' | 'openai' | 'claude';
 
@@ -156,49 +154,70 @@ async function callProvider(
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers':
+      'authorization, apikey, content-type, x-client-info',
+  } as const;
+
   try {
+    // Handle CORS preflight explicitly (the browser may send OPTIONS before POST).
+    if (req.method === 'OPTIONS') {
+      return new Response('OK', { status: 200, headers: corsHeaders });
+    }
+
     if (req.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+      return new Response('Method not allowed', {
+        status: 405,
+        headers: corsHeaders,
+      });
     }
 
     const { provider, skillMarkdown, history, message } =
       (await req.json()) as RequestBody;
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
+    const openAiKey = Deno.env.get('OPENAI_API_KEY');
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
 
-    if (!supabaseUrl || !serviceKey) {
-      console.error('Missing Supabase env vars in function');
-      return new Response('Missing Supabase configuration', { status: 500 });
-    }
+    const apiKey =
+      provider === 'gemini'
+        ? geminiKey
+        : provider === 'openai'
+          ? openAiKey
+          : anthropicKey;
 
-    const supabase = createClient(supabaseUrl, serviceKey);
-
-    const { data: keyRow, error } = await supabase
-      .from('ai_api_keys')
-      .select('api_key')
-      .eq('provider', provider)
-      .single();
-
-    if (error || !keyRow) {
-      console.error('Missing API key row', error);
-      return new Response('Missing API key', { status: 500 });
+    if (!apiKey) {
+      const missing =
+        provider === 'gemini'
+          ? 'GEMINI_API_KEY'
+          : provider === 'openai'
+            ? 'OPENAI_API_KEY'
+            : 'ANTHROPIC_API_KEY';
+      return new Response(`Missing ${missing}`, { status: 500, headers: corsHeaders });
     }
 
     const text = await callProvider(
       provider,
-      keyRow.api_key,
+      apiKey,
       skillMarkdown,
       history,
       message,
     );
 
     return new Response(JSON.stringify({ text }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders,
+      },
     });
   } catch (err) {
     console.error('call_ai error', err);
-    return new Response('Internal error', { status: 500 });
+    return new Response('Internal error', {
+      status: 500,
+      headers: corsHeaders,
+    });
   }
 });
 
