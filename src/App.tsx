@@ -8,11 +8,14 @@ import { Skill, SkillContent, Message, AIProvider } from './types';
 import {
   createChatSession,
   saveChatMessage,
+  getRecentSessions,
+  getChatMessages,
   trackSkillView,
   trackChatCreated,
   ChatSession,
   getUserPreferences,
-  updateUserPreferences
+  updateUserPreferences,
+  supabase
 } from './services/supabase';
 import { chatWithAI } from './services/ai-chat';
 import { translateSkill } from './services/translate';
@@ -64,6 +67,12 @@ export default function App() {
   const [lastUserQuestion, setLastUserQuestion] = useState<string | null>(null);
   const [provider, setProvider] = useState<AIProvider>('gemini');
   const [showSettings, setShowSettings] = useState(false);
+  const [crawlEnabled, setCrawlEnabled] = useState(true);
+  const [crawlMaxPages, setCrawlMaxPages] = useState(3);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [saveChatHistoryEnabled, setSaveChatHistoryEnabled] = useState(false);
+  const [recentSessions, setRecentSessions] = useState<ChatSession[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const translatedSkillCacheRef = useRef<Map<string, string>>(new Map());
@@ -92,6 +101,8 @@ export default function App() {
     async function initPreferences() {
       try {
         const prefs = await getUserPreferences();
+        setIsLoggedIn(!!prefs);
+        setSaveChatHistoryEnabled(!!prefs?.save_chat_history);
         const storedProvider = window.localStorage.getItem('ai-provider') as AIProvider | null;
 
         let initialProvider: AIProvider = 'gemini';
@@ -109,6 +120,8 @@ export default function App() {
         }
       } catch (error) {
         console.error('Error loading AI preferences:', error);
+        setIsLoggedIn(false);
+        setSaveChatHistoryEnabled(false);
         const fallbackProvider =
           (window.localStorage.getItem('ai-provider') as AIProvider | null) || 'gemini';
         setProvider(fallbackProvider);
@@ -139,6 +152,20 @@ export default function App() {
 
     return () => window.clearInterval(id);
   }, [isSending]);
+
+  useEffect(() => {
+    if (view !== 'dashboard') return;
+    if (!isLoggedIn || !saveChatHistoryEnabled) {
+      setRecentSessions([]);
+      return;
+    }
+
+    setLoadingSessions(true);
+    getRecentSessions(10)
+      .then((sessions) => setRecentSessions(sessions))
+      .catch((e) => console.error('Error loading chat history:', e))
+      .finally(() => setLoadingSessions(false));
+  }, [view, isLoggedIn, saveChatHistoryEnabled]);
 
   async function handleSelectSkill(skill: Skill) {
     setSelectedSkill(skill);
@@ -201,11 +228,94 @@ export default function App() {
     }
   }
 
+  async function openSession(session: ChatSession) {
+    const skill = skills.find((s) => s.path === session.skill_path);
+    if (!skill) {
+      console.warn('Skill not found for session:', session.skill_path);
+      return;
+    }
+
+    setCurrentSession(session);
+    setMessages([]);
+    setView('chat');
+    setIsSending(false);
+
+    try {
+      const msgs = await getChatMessages(session.id);
+      setMessages(msgs);
+
+      const userMsgs = msgs.filter((m) => m.role === 'user');
+      const lastUser = [...userMsgs].reverse()[0];
+      setTotalQuestions(userMsgs.length);
+      setLastUserQuestion(lastUser?.content ?? null);
+    } catch (e) {
+      console.error('Error loading session messages:', e);
+    }
+
+    setSelectedSkill(skill);
+    setLoadingContent(true);
+    setSkillUsage(null);
+
+    try {
+      const content = await fetchSkillContent(skill.path);
+      setSkillContent(content);
+
+      try {
+        const usageEn = extractSkillUsage(content.markdown);
+        setSkillUsage(usageEn);
+      } catch (e) {
+        console.error('Error extracting skill usage (en):', e);
+      }
+
+      void trackSkillView(skill.name, skill.path).catch(console.error);
+
+      const currentTranslateId = ++translateRequestIdRef.current;
+      const cacheKey = `${provider}:${skill.path}`;
+
+      const cached = translatedSkillCacheRef.current.get(cacheKey);
+      if (cached) {
+        if (translateRequestIdRef.current === currentTranslateId) {
+          setSkillContent({ name: content.name, markdown: cached });
+          try {
+            setSkillUsage(extractSkillUsage(cached));
+          } catch (e) {
+            console.error('Error extracting skill usage (bg cached):', e);
+          }
+        }
+      } else {
+        (async () => {
+          try {
+            const translated = await translateSkill(provider, skill.path, content.markdown);
+            const translatedMarkdown = translated || content.markdown;
+            translatedSkillCacheRef.current.set(cacheKey, translatedMarkdown);
+
+            if (translateRequestIdRef.current !== currentTranslateId) return;
+            setSkillContent({ name: content.name, markdown: translatedMarkdown });
+
+            try {
+              setSkillUsage(extractSkillUsage(translatedMarkdown));
+            } catch (e) {
+              console.error('Error extracting skill usage (bg):', e);
+            }
+          } catch (translationError) {
+            console.error('Error translating skill content:', translationError);
+          }
+        })();
+      }
+    } catch (error) {
+      console.error('Error loading skill content for session:', error);
+    } finally {
+      setLoadingContent(false);
+    }
+  }
+
   async function handleSendMessage() {
     if (!input.trim() || !skillContent || isSending || !selectedSkill) return;
+    const { data: authSessionData } = await supabase.auth.getSession();
+    const canPersist = saveChatHistoryEnabled && !!authSessionData.session?.user;
 
     let session = currentSession;
-    if (!session) {
+    if (!session && canPersist) {
       session = await createChatSession(
         selectedSkill.name,
         selectedSkill.path,
@@ -226,7 +336,7 @@ export default function App() {
     setIsSending(true);
     setView('chat');
 
-    if (session) {
+    if (session && canPersist) {
       await saveChatMessage(session.id, 'user', input);
     }
 
@@ -235,12 +345,14 @@ export default function App() {
         provider,
         skillContent.markdown,
         updatedHistory,
-        input
+        input,
+        crawlEnabled,
+        crawlMaxPages
       );
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
 
-      if (session) {
+      if (session && canPersist) {
         await saveChatMessage(session.id, 'model', response);
       }
     } catch (error) {
@@ -248,7 +360,7 @@ export default function App() {
       const errorMessage = 'Извинявай, възникна грешка. Опитай отново.';
       setMessages(prev => [...prev, { role: 'model', content: errorMessage }]);
 
-      if (session) {
+      if (session && canPersist) {
         await saveChatMessage(session.id, 'model', errorMessage);
       }
     } finally {
@@ -525,6 +637,48 @@ export default function App() {
                   <option value="claude">Claude (Anthropic)</option>
                 </select>
               </div>
+              <div className="flex flex-col gap-1 flex-[2] w-full">
+                <label className="opacity-60">Пази история на чатове</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={saveChatHistoryEnabled}
+                    disabled={!isLoggedIn}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setSaveChatHistoryEnabled(next);
+                      updateUserPreferences({ save_chat_history: next }).catch(console.error);
+                    }}
+                  />
+                  <span className="text-[11px] opacity-70">
+                    {isLoggedIn ? 'Записва сесиите в Supabase' : 'Изисква логин'}
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 flex-[2] w-full">
+                <label className="opacity-60">Crawling на сайта</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="checkbox"
+                    checked={crawlEnabled}
+                    onChange={(e) => setCrawlEnabled(e.target.checked)}
+                  />
+                  <span className="text-[11px] opacity-70">
+                    Обхожда вътрешни страници по подадения URL
+                  </span>
+                  <select
+                    className="bg-white border border-ink/10 rounded-md px-2 py-1 text-xs"
+                    value={crawlMaxPages}
+                    onChange={(e) => setCrawlMaxPages(Number(e.target.value))}
+                    disabled={!crawlEnabled}
+                  >
+                    <option value={2}>2 стр.</option>
+                    <option value={3}>3 стр.</option>
+                    <option value={4}>4 стр.</option>
+                    <option value={5}>5 стр.</option>
+                  </select>
+                </div>
+              </div>
               <div className="flex flex-col gap-1 flex-[2] w-full text-[11px] opacity-70">
                 <p>API ключовете се съхраняват централно в Supabase и не се виждат във фронтенда.</p>
                 <p>За промяна на ключове или модели се свържи с администратор.</p>
@@ -690,6 +844,46 @@ export default function App() {
                     <li>Искай конкретни формати: „3 заглавия“, „структура на имейл“, „план за A/B тест“.</li>
                     <li>Итерарай: уточнявай според това какво ти харесва и какво не.</li>
                   </ul>
+
+                  <div className="pt-6 border-t border-ink/10 space-y-3">
+                    <h3 className="text-xs uppercase tracking-widest opacity-60">
+                      История на чатове
+                    </h3>
+                    {loadingSessions ? (
+                      <div className="flex items-center gap-2 opacity-70">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-[12px]">Зареждам...</span>
+                      </div>
+                    ) : !saveChatHistoryEnabled ? (
+                      <p className="text-[12px] opacity-70">
+                        Включи “Пази история на чатове” в Settings, за да се запазват сесиите.
+                      </p>
+                    ) : !isLoggedIn ? (
+                      <p className="text-[12px] opacity-70">Изисква логин, за да се пази историята.</p>
+                    ) : recentSessions.length ? (
+                      <div className="space-y-2">
+                        {recentSessions.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => openSession(s)}
+                            className="w-full text-left px-3 py-2 rounded-xl border border-ink/10 hover:border-ink/30 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-medium">{s.skill_name}</span>
+                              <span className="text-[11px] opacity-60">
+                                {s.updated_at
+                                  ? new Date(s.updated_at).toLocaleDateString()
+                                  : ''}
+                              </span>
+                            </div>
+                            <p className="text-[11px] opacity-60 mt-1">Отвори и продължи</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[12px] opacity-70">Няма запазени сесии за този акаунт.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -827,7 +1021,11 @@ export default function App() {
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-semibold opacity-40">
                     <Globe className="w-3 h-3" />
-                    <span>Анализ на уебсайт: активен при URL</span>
+                    <span>
+                      {crawlEnabled
+                        ? `Crawling активен (${crawlMaxPages} стр.)`
+                        : 'Анализ на уебсайт: само по подадения URL'}
+                    </span>
                   </div>
                 </div>
                 <div className="relative flex items-center gap-2">

@@ -14,6 +14,7 @@ export interface ChatSession {
   skill_name: string;
   skill_path: string;
   skill_category?: string;
+  user_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +33,8 @@ export interface UserPreferences {
   last_visited_skill?: string;
   ai_provider?: string;
   theme: string;
+  save_chat_history: boolean;
+  user_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -51,12 +54,23 @@ export async function createChatSession(
   skillPath: string,
   skillCategory?: string
 ): Promise<ChatSession | null> {
+  let userId: string | null = null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    userId = data.session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+  const user = userId ? { id: userId } : null;
+  if (!user) return null;
+
   const { data, error } = await supabase
     .from('chat_sessions')
     .insert({
       skill_name: skillName,
       skill_path: skillPath,
       skill_category: skillCategory,
+      user_id: user.id,
     })
     .select()
     .single();
@@ -187,9 +201,21 @@ export async function getPopularSkills(limit = 5): Promise<SkillAnalytics[]> {
 }
 
 export async function getUserPreferences(): Promise<UserPreferences | null> {
+  let userId: string | null = null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    userId = data.session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+
+  const user = userId ? { id: userId } : null;
+  if (!user) return null;
+
   const { data, error } = await supabase
     .from('user_preferences')
     .select('*')
+    .eq('user_id', user.id)
     .limit(1)
     .maybeSingle();
 
@@ -199,11 +225,21 @@ export async function getUserPreferences(): Promise<UserPreferences | null> {
   }
 
   if (!data) {
-    const { data: newPrefs } = await supabase
+    const { data: newPrefs, error: insertError } = await supabase
       .from('user_preferences')
-      .insert({ favorite_skills: [], theme: 'light', ai_provider: 'gemini' })
+      .insert({
+        user_id: user.id,
+        favorite_skills: [],
+        theme: 'light',
+        ai_provider: 'gemini',
+        save_chat_history: true
+      })
       .select()
       .single();
+    if (insertError) {
+      console.error('Error creating user preferences:', insertError);
+      return null;
+    }
     return newPrefs;
   }
 

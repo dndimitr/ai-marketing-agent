@@ -13,6 +13,8 @@ interface RequestBody {
   skillMarkdown: string;
   history: Message[];
   message: string;
+  crawlEnabled?: boolean;
+  crawlMaxPages?: number;
 }
 
 function truncateText(text: string, maxChars: number): string {
@@ -113,10 +115,12 @@ async function readLimitedText(res: Response, maxBytes: number): Promise<string>
 
 interface WebpageExtract {
   url: string;
+  fetchedUrl?: string;
   title?: string;
   metaDescription?: string;
   headings?: string[];
   pageTextExcerpt?: string;
+  html?: string;
 }
 
 function buildWebpageContext(extract: WebpageExtract): string {
@@ -130,6 +134,9 @@ function buildWebpageContext(extract: WebpageExtract): string {
   const parts: string[] = [];
   parts.push('WEBPAGE_CONTEXT (untrusted scraped data):');
   parts.push(`- SOURCE_URL: ${extract.url}`);
+  if (extract.fetchedUrl && extract.fetchedUrl !== extract.url) {
+    parts.push(`- FETCHED_URL: ${extract.fetchedUrl}`);
+  }
   if (title) parts.push(`- PAGE_TITLE: ${title}`);
   if (meta) parts.push(`- META_DESCRIPTION: ${meta}`);
   if (headings.length) parts.push(`- HEADINGS: ${headings.join(' | ')}`);
@@ -192,14 +199,57 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
 
     return {
       url,
+      fetchedUrl: res.url || url,
       title,
       metaDescription,
       headings,
       pageTextExcerpt: textBits.join('\n'),
+      html,
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function extractInternalLinks(html: string, baseUrl: string, maxLinks: number): string[] {
+  const base = new URL(baseUrl);
+  const matches = [...html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi)];
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const m of matches) {
+    const href = (m[1] || '').trim();
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+      continue;
+    }
+
+    try {
+      const normalized = new URL(href, base).toString();
+      const u = new URL(normalized);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      if (u.hostname !== base.hostname) continue;
+      u.hash = '';
+      const clean = u.toString();
+      if (seen.has(clean)) continue;
+      seen.add(clean);
+      out.push(clean);
+      if (out.length >= maxLinks) break;
+    } catch {
+      // ignore invalid urls
+    }
+  }
+
+  return out;
+}
+
+function buildCrawledWebContext(pages: WebpageExtract[]): string {
+  const parts: string[] = [];
+  parts.push(`CRAWLED_PAGES_COUNT: ${pages.length}`);
+  for (const page of pages) {
+    parts.push('');
+    parts.push(buildWebpageContext(page));
+  }
+  return parts.join('\n');
 }
 
 function buildSystemInstruction(skillMarkdown: string, webpageContext?: string): string {
@@ -352,16 +402,37 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { provider, skillMarkdown, history, message } =
+    const { provider, skillMarkdown, history, message, crawlEnabled, crawlMaxPages } =
       (await req.json()) as RequestBody;
 
     const urls = extractUrlsFromText(message);
     let webpageContext: string | undefined;
     if (urls.length) {
       try {
-        const extracted = await fetchAndExtractWebpage(urls[0]);
-        if (extracted?.title || extracted?.metaDescription || extracted?.pageTextExcerpt) {
-          webpageContext = buildWebpageContext(extracted);
+        const maxPages = Math.max(1, Math.min(Number(crawlMaxPages || 3), 5));
+        if (crawlEnabled) {
+          const root = await fetchAndExtractWebpage(urls[0]);
+          const queue = extractInternalLinks(root.html || '', root.fetchedUrl || root.url, 20);
+          const pages: WebpageExtract[] = [root];
+
+          for (const nextUrl of queue) {
+            if (pages.length >= maxPages) break;
+            try {
+              const page = await fetchAndExtractWebpage(nextUrl);
+              if (page.title || page.metaDescription || page.pageTextExcerpt) {
+                pages.push(page);
+              }
+            } catch {
+              // ignore individual crawl page failures
+            }
+          }
+
+          webpageContext = buildCrawledWebContext(pages);
+        } else {
+          const extracted = await fetchAndExtractWebpage(urls[0]);
+          if (extracted?.title || extracted?.metaDescription || extracted?.pageTextExcerpt) {
+            webpageContext = buildWebpageContext(extracted);
+          }
         }
       } catch (urlError) {
         // Don't fail the whole request if URL scanning breaks.

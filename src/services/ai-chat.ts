@@ -5,7 +5,9 @@ export async function chatWithAI(
   provider: string,
   skillContent: string,
   messages: Message[],
-  userMessage: string
+  userMessage: string,
+  crawlEnabled = false,
+  crawlMaxPages = 3
 ): Promise<string> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
@@ -31,6 +33,8 @@ export async function chatWithAI(
       skillMarkdown: skillContent,
       history: messages,
       message: userMessage,
+      crawlEnabled,
+      crawlMaxPages,
     }),
   });
 
