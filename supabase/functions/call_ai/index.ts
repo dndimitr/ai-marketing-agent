@@ -124,6 +124,7 @@ interface WebpageExtract {
   headings?: string[];
   pageTextExcerpt?: string;
   html?: string;
+  isCloudflareChallenge?: boolean;
 }
 
 function buildWebpageContext(extract: WebpageExtract): string {
@@ -182,6 +183,7 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
     }
 
     const html = await readLimitedText(res, 220_000);
+    const isChallenge = isCloudflareChallengePage(html, res.headers);
     const sanitized = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<style[\s\S]*?<\/style>/gi, ' ');
@@ -226,6 +228,7 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
       headings,
       pageTextExcerpt: textBits.join('\n'),
       html,
+      isCloudflareChallenge: isChallenge,
     };
   } finally {
     clearTimeout(timeout);
@@ -266,11 +269,37 @@ function extractInternalLinks(html: string, baseUrl: string, maxLinks: number): 
 function buildCrawledWebContext(pages: WebpageExtract[]): string {
   const parts: string[] = [];
   parts.push(`CRAWLED_PAGES_COUNT: ${pages.length}`);
+  const metadataOnly = pages.every(
+    (p) =>
+      !(p.pageTextExcerpt && p.pageTextExcerpt.trim().length > 0) &&
+      !((p.headings || []).length > 0),
+  );
+  if (metadataOnly) {
+    parts.push('ANALYSIS_LIMITATION: metadata_only (title/meta/og fields only)');
+  }
   for (const page of pages) {
     parts.push('');
     parts.push(buildWebpageContext(page));
   }
   return parts.join('\n');
+}
+
+function isCloudflareChallengePage(html: string, headers: Headers): boolean {
+  const server = (headers.get('server') || '').toLowerCase();
+  const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
+    .toLowerCase()
+    .trim();
+  const hasChallengeMarker =
+    html.includes('/cdn-cgi/challenge-platform/') ||
+    html.includes('cf-browser-verification') ||
+    html.includes('data-cf-beacon');
+
+  return (
+    server.includes('cloudflare') &&
+    (hasChallengeMarker ||
+      title.includes('just a moment') ||
+      title.includes('attention required'))
+  );
 }
 
 function buildSystemInstruction(skillMarkdown: string, webpageContext?: string): string {
@@ -439,6 +468,7 @@ Deno.serve(async (req) => {
 
     const urls = extractUrlsFromText(message);
     let webpageContext: string | undefined;
+    let challengeDetected = false;
     if (urls.length) {
       try {
         const maxPages = Math.max(1, Math.min(Number(crawlMaxPages || 3), 5));
@@ -450,19 +480,36 @@ Deno.serve(async (req) => {
           seen.add(seedUrl);
           try {
             const root = await fetchAndExtractWebpage(seedUrl);
-            if (root.title || root.ogTitle || root.metaDescription || root.ogDescription || root.pageTextExcerpt) {
+            if (root.isCloudflareChallenge) {
+              challengeDetected = true;
+            } else if (
+              root.title ||
+              root.ogTitle ||
+              root.metaDescription ||
+              root.ogDescription ||
+              root.pageTextExcerpt
+            ) {
               pages.push(root);
             }
 
             if (crawlEnabled && pages.length < maxPages) {
-              const queue = extractInternalLinks(root.html || '', root.fetchedUrl || root.url, 20);
+              // Gentler crawling: lower link budget, sequential processing.
+              const queue = extractInternalLinks(root.html || '', root.fetchedUrl || root.url, 8);
               for (const nextUrl of queue) {
                 if (pages.length >= maxPages) break;
                 if (seen.has(nextUrl)) continue;
                 seen.add(nextUrl);
                 try {
                   const page = await fetchAndExtractWebpage(nextUrl);
-                  if (page.title || page.ogTitle || page.metaDescription || page.ogDescription || page.pageTextExcerpt) {
+                  if (page.isCloudflareChallenge) {
+                    challengeDetected = true;
+                  } else if (
+                    page.title ||
+                    page.ogTitle ||
+                    page.metaDescription ||
+                    page.ogDescription ||
+                    page.pageTextExcerpt
+                  ) {
                     pages.push(page);
                   }
                 } catch {
@@ -485,10 +532,15 @@ Deno.serve(async (req) => {
     }
 
     if (urls.length && requireRealAnalysis && !webpageContext) {
+      const reason = challengeDetected
+        ? 'Cloudflare challenge/WAF блокира crawler достъпа.'
+        : 'Неуспешно извличане на HTML съдържание или страницата е недостъпна за server-side fetch.';
       return new Response(
         JSON.stringify({
           text:
-            'Не успях да извлека реално съдържание от подадения URL(и), затова не правя измислен одит. Дай алтернативен линк (или вътрешна страница), и ще направя анализ на база реално извлечени данни.',
+            'Не успях да извлека реално съдържание от подадения URL(и), затова не правя измислен одит.\n' +
+            `Причина: ${reason}\n` +
+            'Дай алтернативен линк (или вътрешна страница), и ще направя анализ на база реално извлечени данни.',
         }),
         {
           headers: {
