@@ -18,7 +18,9 @@ function corsHeaders() {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers':
-      'authorization, apikey, content-type, x-client-info',
+      'authorization, apikey, content-type, x-client-info, x-supabase-api-version, accept, origin, x-requested-with',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
   } as const;
 }
 
@@ -145,7 +147,9 @@ Deno.serve(async (req) => {
   const headers = corsHeaders();
 
   try {
-    if (req.method === 'OPTIONS') return new Response('OK', { status: 200, headers });
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { status: 200, headers });
+    }
     if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers });
 
     const { provider, skill_path, skillMarkdown } = (await req.json()) as RequestBody;
