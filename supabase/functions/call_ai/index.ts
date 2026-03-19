@@ -15,6 +15,7 @@ interface RequestBody {
   message: string;
   crawlEnabled?: boolean;
   crawlMaxPages?: number;
+  requireRealAnalysis?: boolean;
 }
 
 function truncateText(text: string, maxChars: number): string {
@@ -117,15 +118,19 @@ interface WebpageExtract {
   url: string;
   fetchedUrl?: string;
   title?: string;
+  ogTitle?: string;
   metaDescription?: string;
+  ogDescription?: string;
   headings?: string[];
   pageTextExcerpt?: string;
   html?: string;
 }
 
 function buildWebpageContext(extract: WebpageExtract): string {
-  const title = extract.title ? truncateText(extract.title, 180) : '';
-  const meta = extract.metaDescription ? truncateText(extract.metaDescription, 240) : '';
+  const title = (extract.title || extract.ogTitle) ? truncateText(extract.title || extract.ogTitle || '', 180) : '';
+  const meta = (extract.metaDescription || extract.ogDescription)
+    ? truncateText(extract.metaDescription || extract.ogDescription || '', 240)
+    : '';
   const headings = (extract.headings || [])
     .slice(0, 8)
     .map((h) => truncateText(h, 120));
@@ -164,6 +169,12 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
+      headers: {
+        // Some websites/social pages block empty/default UA.
+        'User-Agent': 'Mozilla/5.0 (compatible; MarketingAgentBot/1.0; +https://example.local)',
+        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,bg;q=0.8',
+      },
     });
 
     if (!res.ok) {
@@ -177,6 +188,10 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
 
     const titleMatch = sanitized.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title = titleMatch?.[1] ? stripHtmlTags(titleMatch[1]) : undefined;
+    const ogTitleMatch = sanitized.match(
+      /<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']*)["'][^>]*>/i,
+    );
+    const ogTitle = ogTitleMatch?.[1] ? stripHtmlTags(ogTitleMatch[1]) : undefined;
 
     const metaDescMatch =
       sanitized.match(
@@ -186,6 +201,10 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
         /<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']*)["'][^>]*>/i,
       );
     const metaDescription = metaDescMatch?.[1] ? stripHtmlTags(metaDescMatch[1]) : undefined;
+    const ogDescMatch = sanitized.match(
+      /<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']*)["'][^>]*>/i,
+    );
+    const ogDescription = ogDescMatch?.[1] ? stripHtmlTags(ogDescMatch[1]) : undefined;
 
     const headingMatches = [...sanitized.matchAll(/<(h[1-3])[^>]*>([\s\S]*?)<\/\1>/gi)];
     const headings = headingMatches.map((m) => stripHtmlTags(m[2])).filter(Boolean);
@@ -201,7 +220,9 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
       url,
       fetchedUrl: res.url || url,
       title,
+      ogTitle,
       metaDescription,
+      ogDescription,
       headings,
       pageTextExcerpt: textBits.join('\n'),
       html,
@@ -268,6 +289,9 @@ ANSWER STYLE
 - Use short sections, bullets, or numbered playbooks.
 - Whenever possible, give specific examples (headlines, CTAs, structures, copy variants, test ideas).
 - Clearly state assumptions if you must guess, but still give a recommendation.
+- If WEBPAGE_CONTEXT is present, base your audit strictly on it.
+- Do not claim that you cannot access or scan the website when WEBPAGE_CONTEXT is provided.
+- If WEBPAGE_CONTEXT is missing, explicitly say the scan failed and ask for another URL/page.
 
 BEHAVIOR
 - If the user is unclear, ask 1–2 focused clarification questions while still giving a useful first recommendation.
@@ -402,7 +426,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { provider, skillMarkdown, history, message, crawlEnabled, crawlMaxPages } =
+    const {
+      provider,
+      skillMarkdown,
+      history,
+      message,
+      crawlEnabled,
+      crawlMaxPages,
+      requireRealAnalysis,
+    } =
       (await req.json()) as RequestBody;
 
     const urls = extractUrlsFromText(message);
@@ -410,34 +442,61 @@ Deno.serve(async (req) => {
     if (urls.length) {
       try {
         const maxPages = Math.max(1, Math.min(Number(crawlMaxPages || 3), 5));
-        if (crawlEnabled) {
-          const root = await fetchAndExtractWebpage(urls[0]);
-          const queue = extractInternalLinks(root.html || '', root.fetchedUrl || root.url, 20);
-          const pages: WebpageExtract[] = [root];
-
-          for (const nextUrl of queue) {
-            if (pages.length >= maxPages) break;
-            try {
-              const page = await fetchAndExtractWebpage(nextUrl);
-              if (page.title || page.metaDescription || page.pageTextExcerpt) {
-                pages.push(page);
-              }
-            } catch {
-              // ignore individual crawl page failures
+        const pages: WebpageExtract[] = [];
+        const seen = new Set<string>();
+        for (const seedUrl of urls) {
+          if (pages.length >= maxPages) break;
+          if (seen.has(seedUrl)) continue;
+          seen.add(seedUrl);
+          try {
+            const root = await fetchAndExtractWebpage(seedUrl);
+            if (root.title || root.ogTitle || root.metaDescription || root.ogDescription || root.pageTextExcerpt) {
+              pages.push(root);
             }
-          }
 
-          webpageContext = buildCrawledWebContext(pages);
-        } else {
-          const extracted = await fetchAndExtractWebpage(urls[0]);
-          if (extracted?.title || extracted?.metaDescription || extracted?.pageTextExcerpt) {
-            webpageContext = buildWebpageContext(extracted);
+            if (crawlEnabled && pages.length < maxPages) {
+              const queue = extractInternalLinks(root.html || '', root.fetchedUrl || root.url, 20);
+              for (const nextUrl of queue) {
+                if (pages.length >= maxPages) break;
+                if (seen.has(nextUrl)) continue;
+                seen.add(nextUrl);
+                try {
+                  const page = await fetchAndExtractWebpage(nextUrl);
+                  if (page.title || page.ogTitle || page.metaDescription || page.ogDescription || page.pageTextExcerpt) {
+                    pages.push(page);
+                  }
+                } catch {
+                  // ignore individual crawl page failures
+                }
+              }
+            }
+          } catch {
+            // ignore individual seed failures
           }
+        }
+
+        if (pages.length > 0) {
+          webpageContext = buildCrawledWebContext(pages);
         }
       } catch (urlError) {
         // Don't fail the whole request if URL scanning breaks.
         console.error('URL scan failed:', urlError);
       }
+    }
+
+    if (urls.length && requireRealAnalysis && !webpageContext) {
+      return new Response(
+        JSON.stringify({
+          text:
+            'Не успях да извлека реално съдържание от подадения URL(и), затова не правя измислен одит. Дай алтернативен линк (или вътрешна страница), и ще направя анализ на база реално извлечени данни.',
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
+        },
+      );
     }
 
     const geminiKey = Deno.env.get('GEMINI_API_KEY');

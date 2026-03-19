@@ -35,6 +35,7 @@ export async function chatWithAI(
       message: userMessage,
       crawlEnabled,
       crawlMaxPages,
+      requireRealAnalysis: true,
     }),
   });
 
