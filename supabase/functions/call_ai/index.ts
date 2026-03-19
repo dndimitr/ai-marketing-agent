@@ -81,10 +81,12 @@ function stripHtmlTags(s: string): string {
 
 async function readLimitedText(res: Response, maxBytes: number): Promise<string> {
   const contentType = res.headers.get('content-type') || '';
-  if (
-    !contentType.toLowerCase().includes('text/html') &&
-    !contentType.includes('application/xhtml+xml')
-  ) {
+  const isLikelyText =
+    contentType.toLowerCase().includes('text/html') ||
+    contentType.includes('application/xhtml+xml') ||
+    contentType.toLowerCase().includes('text/plain') ||
+    contentType.toLowerCase().includes('application/json');
+  if (!isLikelyText) {
     throw new Error(`Unsupported content-type: ${contentType}`);
   }
 
@@ -171,8 +173,7 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
       redirect: 'follow',
       signal: controller.signal,
       headers: {
-        // Some websites/social pages block empty/default UA.
-        'User-Agent': 'Mozilla/5.0 (compatible; MarketingAgentBot/1.0; +https://example.local)',
+        // Keep request simple and portable across runtimes.
         Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,bg;q=0.8',
       },
@@ -182,7 +183,14 @@ async function fetchAndExtractWebpage(url: string): Promise<WebpageExtract> {
       throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
     }
 
-    const html = await readLimitedText(res, 220_000);
+    let html = '';
+    try {
+      html = await readLimitedText(res, 220_000);
+    } catch {
+      // Fallback: try plain text body for atypical content-types.
+      const fallback = await res.text();
+      html = fallback.slice(0, 220_000);
+    }
     const isChallenge = isCloudflareChallengePage(html, res.headers);
     const sanitized = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
