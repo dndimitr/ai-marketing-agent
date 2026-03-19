@@ -69,6 +69,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [crawlEnabled, setCrawlEnabled] = useState(true);
   const [crawlMaxPages, setCrawlMaxPages] = useState(3);
+  const [includeSocialCrawl, setIncludeSocialCrawl] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [saveChatHistoryEnabled, setSaveChatHistoryEnabled] = useState(false);
   const [recentSessions, setRecentSessions] = useState<ChatSession[]>([]);
@@ -80,6 +81,36 @@ export default function App() {
   const translateRequestIdRef = useRef(0);
   const [skillUsage, setSkillUsage] = useState<SkillUsage | null>(null);
   const [aiLoadingText, setAiLoadingText] = useState<string>('');
+
+  async function refreshPreferencesFromAuth() {
+    try {
+      const prefs = await getUserPreferences();
+      setIsLoggedIn(!!prefs);
+      setSaveChatHistoryEnabled(!!prefs?.save_chat_history);
+
+      const storedProvider = window.localStorage.getItem('ai-provider') as AIProvider | null;
+      let initialProvider: AIProvider = 'gemini';
+      const prefProvider = (prefs?.ai_provider || '') as AIProvider;
+      if (prefProvider && ['gemini', 'openai', 'claude'].includes(prefProvider)) {
+        initialProvider = prefProvider;
+      } else if (storedProvider && ['gemini', 'openai', 'claude'].includes(storedProvider)) {
+        initialProvider = storedProvider;
+      }
+
+      setProvider(initialProvider);
+
+      if (prefs && (!prefs.ai_provider || prefs.ai_provider !== initialProvider)) {
+        await updateUserPreferences({ ai_provider: initialProvider });
+      }
+    } catch (error) {
+      console.error('Error loading AI preferences:', error);
+      setIsLoggedIn(false);
+      setSaveChatHistoryEnabled(false);
+      const fallbackProvider =
+        (window.localStorage.getItem('ai-provider') as AIProvider | null) || 'gemini';
+      setProvider(fallbackProvider);
+    }
+  }
 
   useEffect(() => {
     async function init() {
@@ -99,37 +130,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    async function initPreferences() {
-      try {
-        const prefs = await getUserPreferences();
-        setIsLoggedIn(!!prefs);
-        setSaveChatHistoryEnabled(!!prefs?.save_chat_history);
-        const storedProvider = window.localStorage.getItem('ai-provider') as AIProvider | null;
+    void refreshPreferencesFromAuth();
 
-        let initialProvider: AIProvider = 'gemini';
-        const prefProvider = (prefs?.ai_provider || '') as AIProvider;
-        if (prefProvider && ['gemini', 'openai', 'claude'].includes(prefProvider)) {
-          initialProvider = prefProvider;
-        } else if (storedProvider && ['gemini', 'openai', 'claude'].includes(storedProvider)) {
-          initialProvider = storedProvider;
-        }
+    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+      void refreshPreferencesFromAuth();
+    });
 
-        setProvider(initialProvider);
-
-        if (!prefs?.ai_provider || prefs.ai_provider !== initialProvider) {
-          await updateUserPreferences({ ai_provider: initialProvider });
-        }
-      } catch (error) {
-        console.error('Error loading AI preferences:', error);
-        setIsLoggedIn(false);
-        setSaveChatHistoryEnabled(false);
-        const fallbackProvider =
-          (window.localStorage.getItem('ai-provider') as AIProvider | null) || 'gemini';
-        setProvider(fallbackProvider);
-      }
-    }
-
-    initPreferences();
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -360,7 +369,8 @@ export default function App() {
         updatedHistory,
         input,
         crawlEnabled,
-        crawlMaxPages
+        crawlMaxPages,
+        includeSocialCrawl
       );
       const modelMessage: Message = { role: 'model', content: response };
       setMessages(prev => [...prev, modelMessage]);
@@ -690,6 +700,17 @@ export default function App() {
                     <option value={4}>4 стр.</option>
                     <option value={5}>5 стр.</option>
                   </select>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="checkbox"
+                    checked={includeSocialCrawl}
+                    onChange={(e) => setIncludeSocialCrawl(e.target.checked)}
+                    disabled={!crawlEnabled}
+                  />
+                  <span className="text-[11px] opacity-70">
+                    Включи социални страници (FB/IG/LinkedIn/TikTok/X)
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col gap-1 flex-[2] w-full text-[11px] opacity-70">
@@ -1036,7 +1057,7 @@ export default function App() {
                     <Globe className="w-3 h-3" />
                     <span>
                       {crawlEnabled
-                        ? `Crawling активен (${crawlMaxPages} стр.)`
+                        ? `Crawling активен (${crawlMaxPages} стр., social ${includeSocialCrawl ? 'on' : 'off'})`
                         : 'Анализ на уебсайт: само по подадения URL'}
                     </span>
                   </div>
