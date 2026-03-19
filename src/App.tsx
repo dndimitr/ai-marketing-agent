@@ -73,6 +73,7 @@ export default function App() {
   const [saveChatHistoryEnabled, setSaveChatHistoryEnabled] = useState(false);
   const [recentSessions, setRecentSessions] = useState<ChatSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [pendingSessionToOpen, setPendingSessionToOpen] = useState<ChatSession | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const translatedSkillCacheRef = useRef<Map<string, string>>(new Map());
@@ -167,6 +168,12 @@ export default function App() {
       .finally(() => setLoadingSessions(false));
   }, [view, isLoggedIn, saveChatHistoryEnabled]);
 
+  useEffect(() => {
+    if (!pendingSessionToOpen) return;
+    if (!skills.length) return;
+    void openSession(pendingSessionToOpen);
+  }, [pendingSessionToOpen, skills]);
+
   async function handleSelectSkill(skill: Skill) {
     setSelectedSkill(skill);
     setLoadingContent(true);
@@ -229,6 +236,12 @@ export default function App() {
   }
 
   async function openSession(session: ChatSession) {
+    if (!skills.length) {
+      setPendingSessionToOpen(session);
+      return;
+    }
+    setPendingSessionToOpen(null);
+
     const skill = skills.find((s) => s.path === session.skill_path);
     if (!skill) {
       console.warn('Skill not found for session:', session.skill_path);
